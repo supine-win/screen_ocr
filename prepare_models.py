@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-预下载PaddleOCR模型脚本
-确保模型文件在打包前已下载完成
+Pre-download PaddleOCR models script
+Ensure model files are downloaded before packaging
 """
 
 import os
@@ -9,18 +10,18 @@ import sys
 from paddleocr import PaddleOCR
 
 def download_models():
-    """下载所需的PaddleOCR模型"""
-    print("开始下载PaddleOCR模型...")
+    """Download required PaddleOCR models"""
+    print("Starting PaddleOCR model download...")
     
     try:
-        # 初始化PaddleOCR，这会自动下载所需模型
+        # Initialize PaddleOCR, this will automatically download required models
         ocr = PaddleOCR(
             use_textline_orientation=True,
             lang='ch'
         )
-        print("✅ 中文OCR模型下载完成")
+        print("Chinese OCR models downloaded successfully")
         
-        # 检查模型文件是否存在
+        # Check if model files exist
         paddlex_home = os.path.expanduser("~/.paddlex")
         if os.path.exists(paddlex_home):
             model_count = 0
@@ -28,26 +29,26 @@ def download_models():
                 for file in files:
                     if file.endswith(('.pdiparams', '.pdmodel')):
                         model_count += 1
-            print(f"✅ 找到 {model_count} 个模型文件")
-            print(f"模型存储路径: {paddlex_home}")
+            print(f"Found {model_count} model files")
+            print(f"Model storage path: {paddlex_home}")
         else:
-            print("❌ 未找到模型文件目录")
+            print("Model file directory not found")
             return False
         
         return True
         
     except Exception as e:
-        print(f"❌ 模型下载失败: {e}")
+        print(f"Model download failed: {e}")
         return False
 
 def list_model_files():
-    """列出所有模型文件"""
+    """List all model files"""
     paddlex_home = os.path.expanduser("~/.paddlex")
     if not os.path.exists(paddlex_home):
-        print("模型目录不存在")
+        print("Model directory does not exist")
         return
     
-    print("\n模型文件列表:")
+    print("\nModel file list:")
     print("=" * 50)
     
     total_size = 0
@@ -60,12 +61,12 @@ def list_model_files():
             print(f"{rel_path} ({size / 1024 / 1024:.1f} MB)")
     
     print("=" * 50)
-    print(f"总大小: {total_size / 1024 / 1024:.1f} MB")
+    print(f"Total size: {total_size / 1024 / 1024:.1f} MB")
 
 if __name__ == "__main__":
     if download_models():
         list_model_files()
-        print("\n✅ 模型准备完成，可以进行打包")
+        print("\nModel preparation completed, ready for packaging")
     else:
-        print("\n❌ 模型准备失败")
+        print("\nModel preparation failed")
         sys.exit(1)
