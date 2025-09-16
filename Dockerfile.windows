@@ -1,0 +1,30 @@
+# Windows交叉编译Dockerfile
+FROM python:3.9-windowsservercore
+
+# 设置工作目录
+WORKDIR C:\\app
+
+# 安装系统依赖
+RUN powershell -Command "Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))"
+RUN choco install -y git
+
+# 复制依赖文件
+COPY requirements.txt .
+
+# 安装Python依赖
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install pyinstaller
+
+# 复制应用代码
+COPY . .
+
+# 预下载模型
+RUN python prepare_models.py
+
+# 构建Windows可执行文件
+RUN python build_windows.py
+
+# 输出目录
+VOLUME ["C:\\app\\release"]
+
+CMD ["cmd"]

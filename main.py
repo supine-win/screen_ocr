@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""
+监控OCR系统主程序
+支持摄像头视频流捕获、OCR识别、HTTP服务等功能
+"""
+
+import sys
+import os
+import argparse
+from gui_app import MonitorOCRApp
+
+def main():
+    """主函数"""
+    parser = argparse.ArgumentParser(description='监控OCR系统')
+    parser.add_argument('--no-gui', action='store_true', help='无GUI模式运行')
+    parser.add_argument('--config', default='config.json', help='配置文件路径')
+    
+    args = parser.parse_args()
+    
+    if args.no_gui:
+        # 无GUI模式 - 仅启动HTTP服务
+        from camera_manager import CameraManager
+        from ocr_processor import OCRProcessor
+        from storage_manager import StorageManager
+        from config_manager import ConfigManager
+        from http_server import HTTPServer
+        
+        print("启动无GUI模式...")
+        
+        # 初始化组件
+        config_manager = ConfigManager(args.config)
+        camera_manager = CameraManager()
+        storage_manager = StorageManager(
+            config_manager.get('storage.screenshot_dir', './screenshots')
+        )
+        ocr_processor = OCRProcessor(config_manager.get_ocr_config())
+        http_server = HTTPServer(
+            camera_manager, 
+            ocr_processor, 
+            storage_manager, 
+            config_manager
+        )
+        
+        # 启动摄像头
+        camera_index = config_manager.get('camera.selected_index', 0)
+        resolution = config_manager.get('camera.resolution', [1920, 1080])
+        
+        if camera_manager.start_camera(camera_index, tuple(resolution)):
+            print(f"摄像头 {camera_index} 启动成功")
+        else:
+            print(f"摄像头 {camera_index} 启动失败")
+            return 1
+        
+        # 启动HTTP服务
+        http_config = config_manager.get_http_config()
+        host = http_config.get('host', '0.0.0.0')
+        port = http_config.get('port', 8080)
+        debug = http_config.get('debug', False)
+        
+        print(f"启动HTTP服务: http://{host}:{port}")
+        
+        try:
+            http_server.start_server(host, port, debug)
+            print("HTTP服务启动成功")
+            print("按 Ctrl+C 退出")
+            
+            # 保持运行
+            import time
+            while True:
+                time.sleep(1)
+                
+        except KeyboardInterrupt:
+            print("\n正在关闭服务...")
+            camera_manager.stop_camera()
+            http_server.stop_server()
+            print("服务已关闭")
+            return 0
+        except Exception as e:
+            print(f"服务启动失败: {e}")
+            return 1
+    
+    else:
+        # GUI模式
+        try:
+            app = MonitorOCRApp()
+            app.run()
+            return 0
+        except Exception as e:
+            print(f"GUI启动失败: {e}")
+            return 1
+
+if __name__ == "__main__":
+    sys.exit(main())

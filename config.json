@@ -1,0 +1,29 @@
+{
+  "camera": {
+    "selected_index": 1,
+    "resolution": [
+      1920,
+      1080
+    ],
+    "fps": 30
+  },
+  "ocr": {
+    "field_mappings": {
+      "温度": "temperature",
+      "湿度": "humidity",
+      "压力": "pressure",
+      "流量": "flow_rate"
+    },
+    "language": "ch",
+    "use_angle_cls": true
+  },
+  "storage": {
+    "screenshot_dir": "./screenshots",
+    "auto_cleanup_days": 30
+  },
+  "http": {
+    "host": "0.0.0.0",
+    "port": 8080,
+    "debug": false
+  }
+}

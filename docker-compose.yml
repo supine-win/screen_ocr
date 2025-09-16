@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  monitor-ocr:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./screenshots:/app/screenshots
+      - ./config.json:/app/config.json
+    devices:
+      - /dev/video0:/dev/video0  # 摄像头设备
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    
+  # 可选：添加nginx反向代理
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - monitor-ocr
+    restart: unless-stopped
