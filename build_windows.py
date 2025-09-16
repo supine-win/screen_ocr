@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Windows打包脚本
-使用PyInstaller将应用打包为Windows可执行文件
+Windows packaging script
+Use PyInstaller to package the application as Windows executable
 """
 
 import os
@@ -11,67 +12,67 @@ import shutil
 from pathlib import Path
 
 def build_windows_executable():
-    """构建Windows可执行文件"""
+    """Build Windows executable"""
     
-    print("开始构建Windows可执行文件...")
+    print("Starting Windows executable build...")
     
-    # 检查PyInstaller是否安装
+    # Check if PyInstaller is installed
     try:
         import PyInstaller
     except ImportError:
-        print("PyInstaller未安装，正在安装...")
+        print("PyInstaller not installed, installing...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
     
-    # 清理之前的构建
+    # Clean previous builds
     build_dirs = ["build", "dist", "__pycache__"]
     for dir_name in build_dirs:
         if os.path.exists(dir_name):
             shutil.rmtree(dir_name)
-            print(f"清理目录: {dir_name}")
+            print(f"Cleaned directory: {dir_name}")
     
-    # 复制PaddleOCR模型文件
+    # Copy PaddleOCR model files
     from model_manager import ModelManager
     model_manager = ModelManager()
     if not model_manager.copy_models_for_packaging():
-        print("❌ 模型文件复制失败，请先运行 prepare_models.py")
+        print("Model file copy failed, please run prepare_models.py first")
         return False
     
-    # PyInstaller命令参数 (macOS使用:分隔符)
+    # PyInstaller command parameters (macOS uses : separator)
     import platform
     separator = ":" if platform.system() != "Windows" else ";"
     
     cmd = [
         "pyinstaller",
-        "--onefile",                    # 打包为单个文件
-        "--windowed",                   # Windows GUI应用
-        "--name=MonitorOCR",           # 可执行文件名
-        "--icon=icon.ico",             # 图标文件（如果存在）
-        f"--add-data=config.json{separator}.",    # 包含配置文件
-        f"--add-data=paddlex_models{separator}paddlex_models",  # 包含模型文件
-        "--hidden-import=paddleocr",   # 隐式导入
+        "--onefile",                    # Package as single file
+        "--windowed",                   # Windows GUI application
+        "--name=MonitorOCR",           # Executable name
+        "--icon=icon.ico",             # Icon file (if exists)
+        f"--add-data=config.json{separator}.",    # Include config file
+        f"--add-data=paddlex_models{separator}paddlex_models",  # Include model files
+        "--hidden-import=paddleocr",   # Hidden imports
         "--hidden-import=cv2",
         "--hidden-import=PIL",
         "--hidden-import=numpy",
         "--hidden-import=flask",
         "--hidden-import=tkinter",
         "--hidden-import=paddle",
-        "--collect-all=paddleocr",     # 收集所有paddleocr文件
+        "--collect-all=paddleocr",     # Collect all paddleocr files
         "--collect-all=paddle",
         "--collect-all=paddlex",
         "main.py"
     ]
     
-    # 如果图标文件不存在，移除图标参数
+    # Remove icon parameter if icon file doesn't exist
     if not os.path.exists("icon.ico"):
         cmd = [arg for arg in cmd if not arg.startswith("--icon")]
     
     try:
-        # 执行打包命令
-        print("执行PyInstaller打包...")
+        # Execute packaging command
+        print("Executing PyInstaller packaging...")
         print(" ".join(cmd))
         subprocess.check_call(cmd)
         
-        # 检查输出文件（根据平台不同）
+        # Check output files (different for different platforms)
         import platform
         if platform.system() == "Darwin":  # macOS
             app_path = Path("dist/MonitorOCR.app")
@@ -81,52 +82,52 @@ def build_windows_executable():
             exe_path = app_path
         
         if app_path.exists():
-            print(f"✅ 打包成功！")
-            print(f"应用程序位置: {app_path.absolute()}")
+            print(f"Packaging successful!")
+            print(f"Application location: {app_path.absolute()}")
             
             if exe_path.exists():
-                print(f"可执行文件大小: {exe_path.stat().st_size / 1024 / 1024:.1f} MB")
+                print(f"Executable size: {exe_path.stat().st_size / 1024 / 1024:.1f} MB")
             
-            # 创建发布目录
+            # Create release directory
             release_dir = Path("release")
             release_dir.mkdir(exist_ok=True)
             
-            # 复制文件到发布目录
+            # Copy files to release directory
             if platform.system() == "Darwin":
-                # macOS: 复制整个.app包
+                # macOS: Copy entire .app bundle
                 if (release_dir / "MonitorOCR.app").exists():
                     shutil.rmtree(release_dir / "MonitorOCR.app")
                 shutil.copytree(app_path, release_dir / "MonitorOCR.app")
                 
-                # 创建启动脚本
+                # Create startup script
                 with open(release_dir / "start.sh", "w", encoding="utf-8") as f:
                     f.write("#!/bin/bash\n")
-                    f.write("echo '启动监控OCR系统...'\n")
+                    f.write("echo 'Starting Monitor OCR System...'\n")
                     f.write("open MonitorOCR.app\n")
                 os.chmod(release_dir / "start.sh", 0o755)
             else:
-                # Windows: 复制exe文件
+                # Windows: Copy exe file
                 shutil.copy2(exe_path, release_dir / "MonitorOCR.exe")
                 
-                # 创建启动脚本
+                # Create startup script
                 with open(release_dir / "start.bat", "w", encoding="utf-8") as f:
                     f.write("@echo off\n")
-                    f.write("echo 启动监控OCR系统...\n")
+                    f.write("echo Starting Monitor OCR System...\n")
                     f.write("MonitorOCR.exe\n")
                     f.write("pause\n")
             
-            # 复制配置文件和文档
+            # Copy config files and documentation
             shutil.copy2("config.json", release_dir / "config.json")
             shutil.copy2("README.md", release_dir / "README.md")
             
-            print(f"✅ 发布包已创建: {release_dir.absolute()}")
+            print(f"Release package created: {release_dir.absolute()}")
             
         else:
-            print("❌ 打包失败：找不到输出文件")
+            print("Packaging failed: Output file not found")
             return False
             
     except subprocess.CalledProcessError as e:
-        print(f"❌ 打包失败: {e}")
+        print(f"Packaging failed: {e}")
         return False
     
     return True
@@ -233,6 +234,17 @@ sectionEnd
 
 if __name__ == "__main__":
     if build_windows_executable():
-        print("\n是否创建安装程序脚本? (y/n): ", end="")
-        if input().lower().startswith('y'):
+        # Check if running in CI environment (no interactive input available)
+        import sys
+        if sys.stdin.isatty():
+            # Interactive mode
+            print("\nCreate installer script? (y/n): ", end="")
+            try:
+                if input().lower().startswith('y'):
+                    create_installer()
+            except EOFError:
+                print("Skipping installer creation (non-interactive environment)")
+        else:
+            # Non-interactive mode (CI/CD)
+            print("Non-interactive environment, automatically creating installer script...")
             create_installer()
