@@ -9,10 +9,12 @@
   },
   "ocr": {
     "field_mappings": {
-      "温度": "temperature",
-      "湿度": "humidity",
-      "压力": "pressure",
-      "流量": "flow_rate"
+      "平均速度": "avg_speed",
+      "最高速度": "max_speed",
+      "最低速度": "min_speed",
+      "速度偏差": "speed_deviation",
+      "位置波动(max)": "position_deviation_max",
+      "位置波动(min)": "position_deviation_min"
     },
     "language": "ch",
     "use_angle_cls": true
