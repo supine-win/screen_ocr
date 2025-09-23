@@ -371,57 +371,7 @@ class MonitorOCRApp:
         self.camera_manager.stop_camera()
         self.http_server.stop_server()
         self.root.destroy()
-
-
-class MappingDialog:
-    def __init__(self, parent):
-        self.result = None
-        
-        self.dialog = tk.Toplevel(parent)
-        self.dialog.title("添加字段映射")
-        self.dialog.geometry("300x150")
-        self.dialog.transient(parent)
-        self.dialog.grab_set()
-        
-        # 字段名
-        tk.Label(self.dialog, text="字段名:").grid(row=0, column=0, padx=10, pady=10, sticky="w")
-        self.field_var = tk.StringVar()
-        tk.Entry(self.dialog, textvariable=self.field_var, width=20).grid(row=0, column=1, padx=10, pady=10)
-        
-        # 映射键
-        tk.Label(self.dialog, text="映射键:").grid(row=1, column=0, padx=10, pady=10, sticky="w")
-        self.key_var = tk.StringVar()
-        tk.Entry(self.dialog, textvariable=self.key_var, width=20).grid(row=1, column=1, padx=10, pady=10)
-        
-        # 按钮
-        button_frame = tk.Frame(self.dialog)
-        button_frame.grid(row=2, column=0, columnspan=2, pady=20)
-        
-        ttk.Button(button_frame, text="确定", command=self.ok_clicked).pack(side="left", padx=5)
-        ttk.Button(button_frame, text="取消", command=self.cancel_clicked).pack(side="left", padx=5)
-        
-        # 居中显示
-        self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() // 2) - (self.dialog.winfo_width() // 2)
-        y = (self.dialog.winfo_screenheight() // 2) - (self.dialog.winfo_height() // 2)
-        self.dialog.geometry(f"+{x}+{y}")
-        
-        self.dialog.wait_window()
     
-    def ok_clicked(self):
-        field = self.field_var.get().strip()
-        key = self.key_var.get().strip()
-        
-        if not field or not key:
-            messagebox.showwarning("警告", "请填写完整信息")
-            return
-        
-        self.result = (field, key)
-        self.dialog.destroy()
-    
-    def cancel_clicked(self):
-        self.dialog.destroy()
-
     def screenshot_ocr(self):
         """执行屏幕截图OCR"""
         try:
@@ -581,6 +531,56 @@ class MappingDialog:
         x = (result_window.winfo_screenwidth() // 2) - (result_window.winfo_width() // 2)
         y = (result_window.winfo_screenheight() // 2) - (result_window.winfo_height() // 2)
         result_window.geometry(f"+{x}+{y}")
+
+
+class MappingDialog:
+    def __init__(self, parent):
+        self.result = None
+        
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("添加字段映射")
+        self.dialog.geometry("300x150")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # 字段名
+        tk.Label(self.dialog, text="字段名:").grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        self.field_var = tk.StringVar()
+        tk.Entry(self.dialog, textvariable=self.field_var, width=20).grid(row=0, column=1, padx=10, pady=10)
+        
+        # 映射键
+        tk.Label(self.dialog, text="映射键:").grid(row=1, column=0, padx=10, pady=10, sticky="w")
+        self.key_var = tk.StringVar()
+        tk.Entry(self.dialog, textvariable=self.key_var, width=20).grid(row=1, column=1, padx=10, pady=10)
+        
+        # 按钮
+        button_frame = tk.Frame(self.dialog)
+        button_frame.grid(row=2, column=0, columnspan=2, pady=20)
+        
+        ttk.Button(button_frame, text="确定", command=self.ok_clicked).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="取消", command=self.cancel_clicked).pack(side="left", padx=5)
+        
+        # 居中显示
+        self.dialog.update_idletasks()
+        x = (self.dialog.winfo_screenwidth() // 2) - (self.dialog.winfo_width() // 2)
+        y = (self.dialog.winfo_screenheight() // 2) - (self.dialog.winfo_height() // 2)
+        self.dialog.geometry(f"+{x}+{y}")
+        
+        self.dialog.wait_window()
+    
+    def ok_clicked(self):
+        field = self.field_var.get().strip()
+        key = self.key_var.get().strip()
+        
+        if not field or not key:
+            messagebox.showwarning("警告", "请填写完整信息")
+            return
+        
+        self.result = (field, key)
+        self.dialog.destroy()
+    
+    def cancel_clicked(self):
+        self.dialog.destroy()
 
 
 if __name__ == "__main__":
