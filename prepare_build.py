@@ -22,8 +22,8 @@ def check_easyocr_models():
     # 需要的模型文件
     required_models = [
         "craft_mlt_25k.pth",  # 文本检测模型
-        "chinese_sim_g2.pth",  # 中文识别模型
-        "english_g2.pth",      # 英文识别模型
+        "zh_sim_g2.pth",      # 中文识别模型 (注意：文件名是zh_sim不是chinese_sim)
+        # "english_g2.pth",   # 英文识别模型 (可选)
     ]
     
     # 检查模型是否存在
@@ -148,7 +148,7 @@ def check_dependencies():
         "torchvision": "torchvision",
         "opencv-python": "cv2",
         "flask": "flask",
-        "pyinstaller": "PyInstaller",
+        "PyInstaller": "PyInstaller",
     }
     
     missing = []
