@@ -20,17 +20,17 @@ class OCRProcessor:
             lang = config.get('language', 'ch')
             print(f"初始化PaddleOCR 3.2.0，语言: {lang}")
             
-            # PaddleOCR 3.2.0的基础配置
+            # PaddleOCR 3.2.0针对中文优化的配置
             self.ocr = PaddleOCR(
-                use_angle_cls=True,   # 启用角度分类
-                lang=lang,
-                # 基础性能参数
-                det_limit_side_len=960,  # 检测模型输入图像边长限制
-                det_limit_type='max',    # 限制类型
-                # 后处理参数优化
-                det_db_thresh=0.3,       # 检测阈值
-                det_db_box_thresh=0.5,   # 框检测阈值
-                det_db_unclip_ratio=1.6, # 检测框扩展比例
+                use_angle_cls=False,     # 禁用角度分类，提高稳定性
+                lang='ch',               # 强制使用中文
+                # 针对中文文本优化的参数
+                det_limit_side_len=1280, # 增加检测边长限制
+                det_limit_type='max',    
+                # 降低检测阈值，提高敏感度
+                det_db_thresh=0.2,       # 降低检测阈值
+                det_db_box_thresh=0.3,   # 降低框检测阈值
+                det_db_unclip_ratio=2.0, # 增加检测框扩展比例
             )
             print("PaddleOCR 3.2.0初始化成功")
         except Exception as e:
@@ -46,42 +46,65 @@ class OCRProcessor:
                 print("OCR引擎未初始化")
                 return {}
             
-            # 针对PaddleOCR 3.2.0优化的图像预处理
+            # 针对中文字符优化的图像预处理
             height, width = image.shape[:2]
             print(f"原始图像尺寸: {image.shape}")
             
-            # 3.2.0版本对图像尺寸的处理更好，适当放大小图像
-            min_size = 320  # 降低最小尺寸要求
-            if max(height, width) < min_size:
-                scale = min_size / max(height, width)
+            # 确保图像有足够的分辨率用于中文识别
+            target_height = 600
+            if height < target_height:
+                scale = target_height / height
                 new_width = int(width * scale)
                 new_height = int(height * scale)
                 image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
                 print(f"图像放大到: {image.shape}")
             
-            # 轻量级图像增强，避免过度处理
+            # 专门针对中文字符的图像处理
             if len(image.shape) == 3:
-                # 1. 轻微的对比度增强
-                lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-                l, a, b = cv2.split(lab)
-                clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8,8))
-                l = clahe.apply(l)
-                enhanced = cv2.merge([l, a, b])
-                processed_image = cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
+                # 1. 转换为灰度图进行处理
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
                 
-                # 2. 轻微降噪
-                processed_image = cv2.bilateralFilter(processed_image, 5, 50, 50)
+                # 2. 使用高斯模糊去噪
+                blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+                
+                # 3. 自适应阈值处理，更适合中文字符
+                adaptive_thresh = cv2.adaptiveThreshold(
+                    blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                    cv2.THRESH_BINARY, 11, 2
+                )
+                
+                # 4. 形态学操作，改善字符连通性
+                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+                processed = cv2.morphologyEx(adaptive_thresh, cv2.MORPH_CLOSE, kernel)
+                
+                # 5. 转回BGR格式
+                processed_image = cv2.cvtColor(processed, cv2.COLOR_GRAY2BGR)
             else:
                 processed_image = image
             
             # 保存处理后的图像用于调试
-            cv2.imwrite("debug_processed_3_2.jpg", processed_image)
-            print("已保存PaddleOCR 3.2.0处理后的图像: debug_processed_3_2.jpg")
+            cv2.imwrite("debug_chinese_optimized.jpg", processed_image)
+            print("已保存中文优化处理后的图像: debug_chinese_optimized.jpg")
             
             print(f"最终处理图像尺寸: {processed_image.shape}")
             
-            # OCR识别 - 使用处理后的图像
-            result = self.ocr.ocr(processed_image)
+            # 尝试多种图像进行OCR识别
+            images_to_try = [
+                ("原始图像", image),
+                ("处理后图像", processed_image)
+            ]
+            
+            result = None
+            for img_name, img in images_to_try:
+                print(f"尝试OCR识别: {img_name}")
+                try:
+                    result = self.ocr.ocr(img)
+                    if result and result[0]:
+                        print(f"使用{img_name}识别成功")
+                        break
+                except Exception as e:
+                    print(f"{img_name}识别失败: {e}")
+                    continue
             
             if not result or not result[0]:
                 print("OCR未识别到任何文本")
