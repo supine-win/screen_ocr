@@ -284,7 +284,9 @@ monitor_ocr/
 **API调用示例**
 ```bash
 # 全屏截图OCR
-curl -X POST http://localhost:8080/screenshot/ocr
+curl -X POST http://localhost:8080/screenshot/ocr \
+  -H "Content-Type: application/json" \
+  -d "{}"
 
 # 区域截图OCR
 curl -X POST http://localhost:8080/screenshot/ocr \
