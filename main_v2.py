@@ -95,12 +95,15 @@ class MonitorOCRV2:
             
             # 初始化HTTP服务器（带健康检查）
             if not no_gui or self.config.get('http', {}).get('enabled', True):
+                # HTTPServer期望的参数: camera_manager, ocr_processor, storage_manager, config_manager
+                from config_manager import ConfigManager
+                self.config_manager = ConfigManager()
+                
                 self.http_server = HTTPServer(
-                    self.config,
                     self.camera_manager,
                     self.ocr_processor,
-                    self.screenshot_manager,
-                    self.storage_manager
+                    self.storage_manager,
+                    self.config_manager
                 )
                 
                 # 注册健康检查蓝图
@@ -111,7 +114,7 @@ class MonitorOCRV2:
                 port = self.config.get('http', {}).get('port', 8080)
                 debug = self.config.get('http', {}).get('debug', False)
                 
-                self.http_server.start(host, port, debug)
+                self.http_server.start_server(host, port, debug)
                 logger.info(f"HTTP server started on {host}:{port}")
                 
                 # 打印健康检查URL
@@ -120,13 +123,8 @@ class MonitorOCRV2:
             
             # 初始化GUI（如果需要）
             if not no_gui:
-                self.gui_app = MonitorOCRApp(
-                    self.config_manager,
-                    self.camera_manager,
-                    self.ocr_processor,
-                    self.screenshot_manager,
-                    self.storage_manager
-                )
+                # MonitorOCRApp不接受参数，它在内部创建所有组件
+                self.gui_app = MonitorOCRApp()
                 logger.info("GUI application initialized")
             
             logger.info("All components initialized successfully")
@@ -225,7 +223,7 @@ class MonitorOCRV2:
         
         # 停止HTTP服务器
         if self.http_server:
-            self.http_server.stop()
+            self.http_server.stop_server()
             logger.info("HTTP server stopped")
         
         # 停止摄像头

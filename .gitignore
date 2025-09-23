@@ -48,6 +48,7 @@ windows_build/
 
 # Logs
 *.log
+logs/
 
 # Temporary files
 *.tmp
