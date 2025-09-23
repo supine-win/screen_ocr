@@ -118,21 +118,6 @@ class OCRProcessor:
                     print(f"  未找到字段 '{field_name}'")
             
             print(f"最终结果: {extracted_values}")
-            
-            # 如果PaddleOCR没有识别到有效内容，使用备选方案
-            if not extracted_values:
-                print("PaddleOCR未识别到有效内容，使用备选数据...")
-                # 基于您提供的截图数据创建模拟结果
-                extracted_values = {
-                    'avg_speed': '606.537',
-                    'max_speed': '652.313', 
-                    'min_speed': '572.205',
-                    'speed_deviation': '45.7764',
-                    'position_deviation_max': '4',
-                    'position_deviation_min': '4'
-                }
-                print(f"使用备选数据: {extracted_values}")
-            
             return extracted_values
             
         except Exception as e:
