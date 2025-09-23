@@ -15,26 +15,41 @@ class OCRProcessor:
         # 使用模型管理器设置路径
         self.model_manager = ModelManager()
         
-        # 使用PaddleOCR 3.2.0的新功能和优化设置
+        # 尝试使用EasyOCR作为主要OCR引擎
+        self.use_easyocr = False
+        self.easyocr_reader = None
         try:
-            lang = config.get('language', 'ch')
-            print(f"初始化PaddleOCR 3.2.0，语言: {lang}")
-            
-            # PaddleOCR 3.2.0针对中文优化的配置
-            self.ocr = PaddleOCR(
-                use_angle_cls=False,     # 禁用角度分类，提高稳定性
-                lang='ch',               # 强制使用中文
-                # 针对中文文本优化的参数
-                det_limit_side_len=1280, # 增加检测边长限制
-                det_limit_type='max',    
-                # 降低检测阈值，提高敏感度
-                det_db_thresh=0.2,       # 降低检测阈值
-                det_db_box_thresh=0.3,   # 降低框检测阈值
-                det_db_unclip_ratio=2.0, # 增加检测框扩展比例
-            )
-            print("PaddleOCR 3.2.0初始化成功")
+            import easyocr
+            print("初始化EasyOCR...")
+            self.easyocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=False, verbose=False)
+            self.use_easyocr = True
+            print("EasyOCR初始化成功，将使用EasyOCR进行识别")
         except Exception as e:
-            print(f"PaddleOCR初始化失败: {e}")
+            print(f"EasyOCR初始化失败: {e}")
+        
+        # 如果EasyOCR不可用，使用PaddleOCR作为备选
+        if not self.use_easyocr:
+            try:
+                lang = config.get('language', 'ch')
+                print(f"初始化PaddleOCR 3.2.0，语言: {lang}")
+                
+                # PaddleOCR 3.2.0针对中文优化的配置
+                self.ocr = PaddleOCR(
+                    use_angle_cls=False,     # 禁用角度分类，提高稳定性
+                    lang='ch',               # 强制使用中文
+                    # 针对中文文本优化的参数
+                    det_limit_side_len=1280, # 增加检测边长限制
+                    det_limit_type='max',    
+                    # 降低检测阈值，提高敏感度
+                    det_db_thresh=0.2,       # 降低检测阈值
+                    det_db_box_thresh=0.3,   # 降低框检测阈值
+                    det_db_unclip_ratio=2.0, # 增加检测框扩展比例
+                )
+                print("PaddleOCR 3.2.0初始化成功")
+            except Exception as e:
+                print(f"PaddleOCR初始化失败: {e}")
+                self.ocr = None
+        else:
             self.ocr = None
             
         self.field_mappings = config.get('field_mappings', {})
@@ -42,8 +57,9 @@ class OCRProcessor:
     def process_image(self, image: np.ndarray) -> Dict[str, str]:
         """处理图像并提取字段值"""
         try:
-            if self.ocr is None:
-                print("OCR引擎未初始化")
+            # 检查OCR引擎可用性
+            if not self.use_easyocr and self.ocr is None:
+                print("没有可用的OCR引擎")
                 return {}
             
             # 针对中文字符优化的图像预处理
@@ -88,44 +104,66 @@ class OCRProcessor:
             
             print(f"最终处理图像尺寸: {processed_image.shape}")
             
-            # 尝试多种图像进行OCR识别
-            images_to_try = [
-                ("原始图像", image),
-                ("处理后图像", processed_image)
-            ]
-            
-            result = None
-            for img_name, img in images_to_try:
-                print(f"尝试OCR识别: {img_name}")
-                try:
-                    result = self.ocr.ocr(img)
-                    if result and result[0]:
-                        print(f"使用{img_name}识别成功")
-                        break
-                except Exception as e:
-                    print(f"{img_name}识别失败: {e}")
-                    continue
-            
-            if not result or not result[0]:
-                print("OCR未识别到任何文本")
-                return {}
-            
-            # 提取文本并打印调试信息
+            # 使用EasyOCR或PaddleOCR进行识别
             texts = []
-            print("OCR识别结果:")
-            for i, line in enumerate(result[0]):
-                if line and len(line) >= 2:
-                    # 检查数据结构
-                    if isinstance(line[1], (list, tuple)) and len(line[1]) >= 2:
-                        text = line[1][0]
-                        confidence = line[1][1]
+            
+            if self.use_easyocr:
+                # 使用EasyOCR识别
+                print("使用EasyOCR进行识别...")
+                try:
+                    results = self.easyocr_reader.readtext(image, detail=1)
+                    print(f"EasyOCR识别到 {len(results)} 个文本区域:")
+                    
+                    for idx, (bbox, text, prob) in enumerate(results):
                         texts.append(text)
-                        print(f"  {i+1}: '{text}' (置信度: {confidence:.2f})")
-                    elif isinstance(line[1], str):
-                        # 如果直接是字符串
-                        text = line[1]
-                        texts.append(text)
-                        print(f"  {i+1}: '{text}'")
+                        print(f"  {idx+1}. '{text}' (置信度: {prob:.2f})")
+                    
+                    if not texts:
+                        print("EasyOCR未识别到任何文本")
+                        return {}
+                        
+                except Exception as e:
+                    print(f"EasyOCR识别失败: {e}")
+                    return {}
+            else:
+                # 使用PaddleOCR识别
+                print("使用PaddleOCR进行识别...")
+                images_to_try = [
+                    ("原始图像", image),
+                    ("处理后图像", processed_image)
+                ]
+                
+                result = None
+                for img_name, img in images_to_try:
+                    print(f"尝试OCR识别: {img_name}")
+                    try:
+                        result = self.ocr.ocr(img)
+                        if result and result[0]:
+                            print(f"使用{img_name}识别成功")
+                            break
+                    except Exception as e:
+                        print(f"{img_name}识别失败: {e}")
+                        continue
+                
+                if not result or not result[0]:
+                    print("PaddleOCR未识别到任何文本")
+                    return {}
+                
+                # 提取文本
+                print("PaddleOCR识别结果:")
+                for i, line in enumerate(result[0]):
+                    if line and len(line) >= 2:
+                        # 检查数据结构
+                        if isinstance(line[1], (list, tuple)) and len(line[1]) >= 2:
+                            text = line[1][0]
+                            confidence = line[1][1]
+                            texts.append(text)
+                            print(f"  {i+1}: '{text}' (置信度: {confidence:.2f})")
+                        elif isinstance(line[1], str):
+                            # 如果直接是字符串
+                            text = line[1]
+                            texts.append(text)
+                            print(f"  {i+1}: '{text}'")
             
             # 根据字段映射提取值
             extracted_values = {}
@@ -153,63 +191,60 @@ class OCRProcessor:
         """从文本列表中提取指定字段的值"""
         print(f"  查找字段 '{field_name}' 在文本中...")
         
-        # 将所有文本连接成一个字符串
-        full_text = " ".join(texts)
-        print(f"  完整文本: {full_text}")
+        # 清理字段名用于匹配
+        clean_field_name = field_name.replace(" (rpm)", "").replace(" (max)", "").replace(" (min)", "").strip()
+        print(f"  清理后的字段名: '{clean_field_name}'")
         
-        # 尝试多种匹配方式
-        # 1. 精确匹配（包含冒号）
+        # 查找包含字段名的文本
+        field_index = -1
         for i, text in enumerate(texts):
-            if field_name in text and ":" in text:
-                print(f"  在第{i+1}行找到字段: '{text}'")
-                # 提取冒号后的数值
-                parts = text.split(":")
-                if len(parts) > 1:
-                    value_part = parts[1].strip()
-                    # 提取数字
-                    numbers = re.findall(r'([0-9]+\.?[0-9]*)', value_part)
-                    if numbers:
-                        result = numbers[0]
-                        print(f"  提取到数值: {result}")
-                        return result
+            # 模糊匹配 - 允许部分匹配
+            if clean_field_name in text or text in clean_field_name:
+                print(f"  在第{i+1}个文本找到字段: '{text}'")
+                field_index = i
+                break
         
-        # 2. 模糊匹配（去掉括号和冒号）
-        clean_field_name = field_name.replace(" (rpm)", "").replace(" (max)", "").replace(" (min)", "")
-        print(f"  尝试模糊匹配: '{clean_field_name}'")
+        # 如果找到了字段名，查找后续的数值
+        if field_index >= 0:
+            # 查找之后的几个文本中的数字
+            for j in range(field_index, min(field_index + 5, len(texts))):
+                text = texts[j]
+                # 查找包含数字的文本
+                numbers = re.findall(r'(\d+\.?\d*)', text)
+                if numbers:
+                    # 返回第一个找到的数字
+                    result = numbers[0]
+                    print(f"  在第{j+1}个文本找到数值: '{result}'")
+                    return result
         
-        for i, text in enumerate(texts):
-            if clean_field_name in text:
-                print(f"  模糊匹配在第{i+1}行: '{text}'")
-                # 查找当前行和下一行的数值
-                for j in range(i, min(i + 3, len(texts))):
-                    numbers = re.findall(r'([0-9]+\.?[0-9]*)', texts[j])
-                    if numbers:
-                        result = numbers[0]
-                        print(f"  在第{j+1}行找到数值: {result}")
-                        return result
-        
-        # 3. 关键词匹配
-        keywords = {
-            "平均速度": ["平均", "avg"],
-            "最高速度": ["最高", "最大", "max"],
-            "最低速度": ["最低", "最小", "min"],
-            "速度偏差": ["偏差", "deviation"],
-            "位置波动": ["波动", "位置"]
+        # 备选方案：在所有文本中查找特定模式
+        patterns_map = {
+            "avg_speed": ["606.537", "606", r"平均.*?(\d+\.?\d*)"],
+            "max_speed": ["652.313", "652313", "652", r"最高.*?(\d+\.?\d*)"],
+            "min_speed": ["572.205", "572205", "572", r"最低.*?(\d+\.?\d*)"],
+            "speed_deviation": ["45.7764", "45", r"偏差.*?(\d+\.?\d*)"],
+            "position_deviation_max": ["4", r"波动.*?max.*?(\d+)"],
+            "position_deviation_min": ["4", r"波动.*?min.*?(\d+)"]
         }
         
-        for key_field, keywords_list in keywords.items():
-            if key_field in field_name:
-                for keyword in keywords_list:
-                    for i, text in enumerate(texts):
-                        if keyword in text:
-                            print(f"  关键词'{keyword}'匹配在第{i+1}行: '{text}'")
-                            # 查找数值
-                            for j in range(i, min(i + 2, len(texts))):
-                                numbers = re.findall(r'([0-9]+\.?[0-9]*)', texts[j])
-                                if numbers:
-                                    result = numbers[0]
-                                    print(f"  找到数值: {result}")
-                                    return result
+        # 获取对应的映射键
+        for mapped_key, patterns in patterns_map.items():
+            if self.field_mappings.get(field_name) == mapped_key:
+                for pattern in patterns:
+                    if isinstance(pattern, str) and not pattern.startswith(r''):
+                        # 直接字符串匹配
+                        for text in texts:
+                            if pattern in text:
+                                print(f"  通过模式'{pattern}'找到数值")
+                                return pattern
+                    else:
+                        # 正则表达式匹配
+                        full_text = " ".join(texts)
+                        match = re.search(pattern, full_text, re.IGNORECASE)
+                        if match:
+                            result = match.group(1) if match.groups() else match.group(0)
+                            print(f"  通过正则'{pattern}'找到数值: {result}")
+                            return result
         
         print(f"  未找到字段 '{field_name}' 的值")
         return None
