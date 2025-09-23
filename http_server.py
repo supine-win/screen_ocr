@@ -17,6 +17,9 @@ class HTTPServer:
         self.config_manager = config_manager
         self.screenshot_manager = ScreenshotManager()
         
+        # 截图区域设置 (API级别的持久设置)
+        self.screenshot_region = None
+        
         self.server_thread = None
         self.is_running = False
         
@@ -115,8 +118,8 @@ class HTTPServer:
             try:
                 data = request.get_json() or {}
                 
-                # 获取截图参数
-                region = data.get('region')  # {'x': 0, 'y': 0, 'width': 1920, 'height': 1080}
+                # 获取截图参数 - 优先使用请求中的region，然后使用服务器设置的region
+                region = data.get('region') or self.screenshot_region
                 method = data.get('method', 'auto')  # 截图方法
                 
                 # 捕获屏幕截图
@@ -166,8 +169,8 @@ class HTTPServer:
             try:
                 data = request.get_json() or {}
                 
-                # 获取截图参数
-                region = data.get('region')
+                # 获取截图参数 - 优先使用请求中的region，然后使用服务器设置的region
+                region = data.get('region') or self.screenshot_region
                 method = data.get('method', 'auto')
                 save_file = data.get('save', True)  # 是否保存文件
                 
@@ -215,8 +218,73 @@ class HTTPServer:
             return jsonify({
                 'screen_size': self.screenshot_manager.get_screen_size(),
                 'available_methods': self.screenshot_manager.get_available_methods(),
-                'system': self.screenshot_manager.system
+                'system': self.screenshot_manager.system,
+                'current_region': self.screenshot_region
             })
+        
+        @self.app.route('/screenshot/region', methods=['GET'])
+        def get_screenshot_region():
+            """获取当前截图区域设置"""
+            return jsonify({
+                'region': self.screenshot_region,
+                'mode': 'region' if self.screenshot_region else 'fullscreen'
+            })
+        
+        @self.app.route('/screenshot/region', methods=['POST'])
+        def set_screenshot_region():
+            """设置截图区域"""
+            try:
+                data = request.get_json() or {}
+                
+                if data.get('mode') == 'fullscreen':
+                    self.screenshot_region = None
+                    return jsonify({
+                        'success': True,
+                        'message': '已设置为全屏截图',
+                        'region': None
+                    })
+                
+                elif data.get('mode') == 'region':
+                    region = data.get('region')
+                    if not region:
+                        return jsonify({'error': '区域截图模式需要提供region参数'}), 400
+                    
+                    # 验证区域参数
+                    required_keys = ['x', 'y', 'width', 'height']
+                    if not all(key in region for key in required_keys):
+                        return jsonify({'error': f'region必须包含: {required_keys}'}), 400
+                    
+                    # 验证数值
+                    try:
+                        x, y, width, height = region['x'], region['y'], region['width'], region['height']
+                        x, y, width, height = int(x), int(y), int(width), int(height)
+                    except (ValueError, TypeError):
+                        return jsonify({'error': '区域坐标必须为整数'}), 400
+                    
+                    # 检查边界
+                    screen_width, screen_height = self.screenshot_manager.get_screen_size()
+                    if x < 0 or y < 0 or width <= 0 or height <= 0:
+                        return jsonify({'error': '坐标和尺寸必须为正数'}), 400
+                    
+                    if x + width > screen_width or y + height > screen_height:
+                        return jsonify({'error': '截图区域超出屏幕范围'}), 400
+                    
+                    self.screenshot_region = {'x': x, 'y': y, 'width': width, 'height': height}
+                    
+                    return jsonify({
+                        'success': True,
+                        'message': f'已设置区域截图: ({x}, {y}) {width}x{height}',
+                        'region': self.screenshot_region
+                    })
+                
+                else:
+                    return jsonify({'error': 'mode必须为fullscreen或region'}), 400
+                    
+            except Exception as e:
+                return jsonify({
+                    'error': f'设置截图区域失败: {str(e)}',
+                    'timestamp': datetime.now().isoformat()
+                }), 500
         
         @self.app.errorhandler(404)
         def not_found(error):

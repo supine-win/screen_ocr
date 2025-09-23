@@ -37,6 +37,9 @@ class MonitorOCRApp:
         self.video_label = None
         self.is_preview_running = False
         
+        # 截图区域设置
+        self.screenshot_region = None  # None表示全屏，否则为{'x': x, 'y': y, 'width': w, 'height': h}
+        
         # 创建主界面
         self.create_main_screen()
         
@@ -86,6 +89,7 @@ class MonitorOCRApp:
         
         # 截图相关按钮
         ttk.Button(button_frame, text="屏幕截图OCR", command=self.screenshot_ocr).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="截图设置", command=self.show_screenshot_settings).pack(side="left", padx=5)
         ttk.Button(button_frame, text="摄像头OCR", command=self.camera_ocr).pack(side="left", padx=5)
         
         self.http_button = ttk.Button(button_frame, text="启动HTTP服务", command=self.toggle_http_server)
@@ -376,13 +380,24 @@ class MonitorOCRApp:
         """执行屏幕截图OCR"""
         try:
             # 显示处理中提示
-            self.show_processing_message("正在进行屏幕截图OCR...")
+            region_text = "区域截图" if self.screenshot_region else "全屏截图"
+            self.show_processing_message(f"正在进行{region_text}OCR...")
             
             # 在后台线程中执行截图OCR
             def do_screenshot_ocr():
                 try:
-                    # 捕获全屏截图
-                    screenshot = self.screenshot_manager.capture_fullscreen()
+                    # 根据设置选择截图方式
+                    if self.screenshot_region:
+                        # 区域截图
+                        screenshot = self.screenshot_manager.capture_region(
+                            self.screenshot_region['x'],
+                            self.screenshot_region['y'],
+                            self.screenshot_region['width'],
+                            self.screenshot_region['height']
+                        )
+                    else:
+                        # 全屏截图
+                        screenshot = self.screenshot_manager.capture_fullscreen()
                     
                     if screenshot is None:
                         self.root.after(0, lambda: messagebox.showerror("错误", "屏幕截图失败"))
@@ -395,7 +410,8 @@ class MonitorOCRApp:
                     ocr_results = self.ocr_processor.process_image(screenshot)
                     
                     # 在主线程中显示结果
-                    self.root.after(0, lambda: self.show_ocr_results("屏幕截图OCR结果", ocr_results, screenshot_path))
+                    title = f"{region_text}OCR结果"
+                    self.root.after(0, lambda: self.show_ocr_results(title, ocr_results, screenshot_path))
                     
                 except Exception as e:
                     self.root.after(0, lambda: messagebox.showerror("错误", f"屏幕截图OCR失败: {str(e)}"))
@@ -531,6 +547,183 @@ class MonitorOCRApp:
         x = (result_window.winfo_screenwidth() // 2) - (result_window.winfo_width() // 2)
         y = (result_window.winfo_screenheight() // 2) - (result_window.winfo_height() // 2)
         result_window.geometry(f"+{x}+{y}")
+    
+    def show_screenshot_settings(self):
+        """显示截图设置界面"""
+        # 创建设置窗口
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title("截图区域设置")
+        settings_window.geometry("400x350")
+        settings_window.transient(self.root)
+        settings_window.grab_set()
+        
+        # 标题
+        title_label = tk.Label(settings_window, text="截图区域设置", font=("Arial", 16, "bold"))
+        title_label.pack(pady=10)
+        
+        # 获取屏幕尺寸
+        screen_width, screen_height = self.screenshot_manager.get_screen_size()
+        
+        # 屏幕信息
+        info_frame = ttk.LabelFrame(settings_window, text="屏幕信息", padding=10)
+        info_frame.pack(fill="x", padx=20, pady=10)
+        
+        tk.Label(info_frame, text=f"屏幕尺寸: {screen_width} x {screen_height}").pack(anchor="w")
+        
+        # 当前设置显示
+        current_frame = ttk.LabelFrame(settings_window, text="当前设置", padding=10)
+        current_frame.pack(fill="x", padx=20, pady=10)
+        
+        if self.screenshot_region:
+            current_text = f"区域截图: ({self.screenshot_region['x']}, {self.screenshot_region['y']}) " \
+                          f"{self.screenshot_region['width']} x {self.screenshot_region['height']}"
+        else:
+            current_text = "全屏截图"
+        
+        current_label = tk.Label(current_frame, text=current_text)
+        current_label.pack(anchor="w")
+        
+        # 设置选项
+        option_frame = ttk.LabelFrame(settings_window, text="截图选项", padding=10)
+        option_frame.pack(fill="x", padx=20, pady=10)
+        
+        # 截图模式选择
+        mode_var = tk.StringVar(value="fullscreen" if not self.screenshot_region else "region")
+        
+        tk.Radiobutton(option_frame, text="全屏截图", variable=mode_var, value="fullscreen").pack(anchor="w")
+        tk.Radiobutton(option_frame, text="区域截图", variable=mode_var, value="region").pack(anchor="w")
+        
+        # 区域设置框架
+        region_frame = ttk.LabelFrame(settings_window, text="区域设置 (像素)", padding=10)
+        region_frame.pack(fill="x", padx=20, pady=10)
+        
+        # 输入字段
+        input_frame = tk.Frame(region_frame)
+        input_frame.pack(fill="x")
+        
+        # X坐标
+        tk.Label(input_frame, text="X:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        x_var = tk.StringVar(value=str(self.screenshot_region['x']) if self.screenshot_region else "100")
+        x_entry = tk.Entry(input_frame, textvariable=x_var, width=10)
+        x_entry.grid(row=0, column=1, padx=5, pady=5)
+        
+        # Y坐标
+        tk.Label(input_frame, text="Y:").grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        y_var = tk.StringVar(value=str(self.screenshot_region['y']) if self.screenshot_region else "100")
+        y_entry = tk.Entry(input_frame, textvariable=y_var, width=10)
+        y_entry.grid(row=0, column=3, padx=5, pady=5)
+        
+        # 宽度
+        tk.Label(input_frame, text="宽度:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        width_var = tk.StringVar(value=str(self.screenshot_region['width']) if self.screenshot_region else "800")
+        width_entry = tk.Entry(input_frame, textvariable=width_var, width=10)
+        width_entry.grid(row=1, column=1, padx=5, pady=5)
+        
+        # 高度
+        tk.Label(input_frame, text="高度:").grid(row=1, column=2, padx=5, pady=5, sticky="w")
+        height_var = tk.StringVar(value=str(self.screenshot_region['height']) if self.screenshot_region else "600")
+        height_entry = tk.Entry(input_frame, textvariable=height_var, width=10)
+        height_entry.grid(row=1, column=3, padx=5, pady=5)
+        
+        # 预设按钮
+        preset_frame = tk.Frame(region_frame)
+        preset_frame.pack(fill="x", pady=5)
+        
+        def set_center_region():
+            """设置居中区域"""
+            w, h = 800, 600
+            x = (screen_width - w) // 2
+            y = (screen_height - h) // 2
+            x_var.set(str(x))
+            y_var.set(str(y))
+            width_var.set(str(w))
+            height_var.set(str(h))
+        
+        def set_quarter_region():
+            """设置1/4屏幕区域"""
+            w, h = screen_width // 2, screen_height // 2
+            x, y = w // 2, h // 2
+            x_var.set(str(x))
+            y_var.set(str(y))
+            width_var.set(str(w))
+            height_var.set(str(h))
+        
+        ttk.Button(preset_frame, text="居中区域 (800x600)", command=set_center_region).pack(side="left", padx=5)
+        ttk.Button(preset_frame, text="1/4屏幕", command=set_quarter_region).pack(side="left", padx=5)
+        
+        # 按钮框架
+        button_frame = tk.Frame(settings_window)
+        button_frame.pack(fill="x", padx=20, pady=20)
+        
+        def apply_settings():
+            """应用设置"""
+            try:
+                if mode_var.get() == "fullscreen":
+                    self.screenshot_region = None
+                    messagebox.showinfo("成功", "已设置为全屏截图")
+                else:
+                    # 验证输入
+                    x = int(x_var.get())
+                    y = int(y_var.get())
+                    width = int(width_var.get())
+                    height = int(height_var.get())
+                    
+                    # 检查边界
+                    if x < 0 or y < 0 or width <= 0 or height <= 0:
+                        messagebox.showerror("错误", "坐标和尺寸必须为正数")
+                        return
+                    
+                    if x + width > screen_width or y + height > screen_height:
+                        messagebox.showerror("错误", "截图区域超出屏幕范围")
+                        return
+                    
+                    self.screenshot_region = {
+                        'x': x,
+                        'y': y,
+                        'width': width,
+                        'height': height
+                    }
+                    
+                    messagebox.showinfo("成功", f"已设置区域截图: ({x}, {y}) {width}x{height}")
+                
+                settings_window.destroy()
+                
+            except ValueError:
+                messagebox.showerror("错误", "请输入有效的数字")
+        
+        def test_screenshot():
+            """测试截图"""
+            try:
+                if mode_var.get() == "fullscreen":
+                    screenshot = self.screenshot_manager.capture_fullscreen()
+                else:
+                    x = int(x_var.get())
+                    y = int(y_var.get())
+                    width = int(width_var.get())
+                    height = int(height_var.get())
+                    screenshot = self.screenshot_manager.capture_region(x, y, width, height)
+                
+                if screenshot is not None:
+                    # 保存测试截图
+                    test_path = self.storage_manager.save_screenshot(screenshot, "test_region")
+                    messagebox.showinfo("测试成功", f"测试截图已保存: {test_path}")
+                else:
+                    messagebox.showerror("测试失败", "截图失败，请检查设置")
+                    
+            except ValueError:
+                messagebox.showerror("错误", "请输入有效的数字")
+            except Exception as e:
+                messagebox.showerror("错误", f"测试失败: {str(e)}")
+        
+        ttk.Button(button_frame, text="测试截图", command=test_screenshot).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="应用", command=apply_settings).pack(side="right", padx=5)
+        ttk.Button(button_frame, text="取消", command=settings_window.destroy).pack(side="right", padx=5)
+        
+        # 居中显示
+        settings_window.update_idletasks()
+        x = (settings_window.winfo_screenwidth() // 2) - (settings_window.winfo_width() // 2)
+        y = (settings_window.winfo_screenheight() // 2) - (settings_window.winfo_height() // 2)
+        settings_window.geometry(f"+{x}+{y}")
 
 
 class MappingDialog:
