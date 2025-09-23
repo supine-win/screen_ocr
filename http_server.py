@@ -4,6 +4,7 @@ import threading
 import time
 from datetime import datetime
 from typing import Optional
+from screenshot_manager import ScreenshotManager
 
 class HTTPServer:
     def __init__(self, camera_manager, ocr_processor, storage_manager, config_manager):
@@ -14,6 +15,7 @@ class HTTPServer:
         self.ocr_processor = ocr_processor
         self.storage_manager = storage_manager
         self.config_manager = config_manager
+        self.screenshot_manager = ScreenshotManager()
         
         self.server_thread = None
         self.is_running = False
@@ -106,6 +108,115 @@ class HTTPServer:
         def storage_stats():
             """获取存储统计信息"""
             return jsonify(self.storage_manager.get_storage_stats())
+        
+        @self.app.route('/screenshot/ocr', methods=['POST'])
+        def screenshot_ocr():
+            """屏幕截图OCR识别服务"""
+            try:
+                data = request.get_json() or {}
+                
+                # 获取截图参数
+                region = data.get('region')  # {'x': 0, 'y': 0, 'width': 1920, 'height': 1080}
+                method = data.get('method', 'auto')  # 截图方法
+                
+                # 捕获屏幕截图
+                if region:
+                    # 区域截图
+                    screenshot = self.screenshot_manager.capture_region(
+                        region['x'], region['y'], 
+                        region['width'], region['height'], 
+                        method
+                    )
+                else:
+                    # 全屏截图
+                    screenshot = self.screenshot_manager.capture_fullscreen(method)
+                
+                if screenshot is None:
+                    return jsonify({
+                        'error': '屏幕截图失败',
+                        'timestamp': datetime.now().isoformat()
+                    }), 500
+                
+                # 保存截图
+                screenshot_path = self.storage_manager.save_screenshot(screenshot, "screen_ocr")
+                
+                # OCR识别
+                ocr_results = self.ocr_processor.process_image(screenshot)
+                
+                return jsonify({
+                    'success': True,
+                    'timestamp': datetime.now().isoformat(),
+                    'screenshot_path': screenshot_path,
+                    'results': ocr_results,
+                    'screenshot_size': {
+                        'width': screenshot.shape[1],
+                        'height': screenshot.shape[0]
+                    }
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'error': f'屏幕截图OCR处理失败: {str(e)}',
+                    'timestamp': datetime.now().isoformat()
+                }), 500
+        
+        @self.app.route('/screenshot/capture', methods=['POST'])
+        def screenshot_capture():
+            """纯屏幕截图服务（不进行OCR）"""
+            try:
+                data = request.get_json() or {}
+                
+                # 获取截图参数
+                region = data.get('region')
+                method = data.get('method', 'auto')
+                save_file = data.get('save', True)  # 是否保存文件
+                
+                # 捕获屏幕截图
+                if region:
+                    screenshot = self.screenshot_manager.capture_region(
+                        region['x'], region['y'], 
+                        region['width'], region['height'], 
+                        method
+                    )
+                else:
+                    screenshot = self.screenshot_manager.capture_fullscreen(method)
+                
+                if screenshot is None:
+                    return jsonify({
+                        'error': '屏幕截图失败',
+                        'timestamp': datetime.now().isoformat()
+                    }), 500
+                
+                result = {
+                    'success': True,
+                    'timestamp': datetime.now().isoformat(),
+                    'screenshot_size': {
+                        'width': screenshot.shape[1],
+                        'height': screenshot.shape[0]
+                    }
+                }
+                
+                # 保存截图文件
+                if save_file:
+                    screenshot_path = self.storage_manager.save_screenshot(screenshot, "screen_capture")
+                    result['screenshot_path'] = screenshot_path
+                
+                return jsonify(result)
+                
+            except Exception as e:
+                return jsonify({
+                    'error': f'屏幕截图失败: {str(e)}',
+                    'timestamp': datetime.now().isoformat()
+                }), 500
+        
+        @self.app.route('/screenshot/info', methods=['GET'])
+        def screenshot_info():
+            """获取屏幕截图相关信息"""
+            return jsonify({
+                'screen_size': self.screenshot_manager.get_screen_size(),
+                'available_methods': self.screenshot_manager.get_available_methods(),
+                'system': self.screenshot_manager.system
+            })
         
         @self.app.errorhandler(404)
         def not_found(error):

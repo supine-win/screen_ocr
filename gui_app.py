@@ -9,6 +9,7 @@ from ocr_processor import OCRProcessor
 from storage_manager import StorageManager
 from config_manager import ConfigManager
 from http_server import HTTPServer
+from screenshot_manager import ScreenshotManager
 
 class MonitorOCRApp:
     def __init__(self):
@@ -23,6 +24,7 @@ class MonitorOCRApp:
             self.config_manager.get('storage.screenshot_dir', './screenshots')
         )
         self.ocr_processor = OCRProcessor(self.config_manager.get_ocr_config())
+        self.screenshot_manager = ScreenshotManager()
         self.http_server = HTTPServer(
             self.camera_manager, 
             self.ocr_processor, 
@@ -81,6 +83,10 @@ class MonitorOCRApp:
         # 按钮
         ttk.Button(button_frame, text="选择摄像头", command=self.show_camera_screen).pack(side="left", padx=5)
         ttk.Button(button_frame, text="设置", command=self.show_settings_screen).pack(side="left", padx=5)
+        
+        # 截图相关按钮
+        ttk.Button(button_frame, text="屏幕截图OCR", command=self.screenshot_ocr).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="摄像头OCR", command=self.camera_ocr).pack(side="left", padx=5)
         
         self.http_button = ttk.Button(button_frame, text="启动HTTP服务", command=self.toggle_http_server)
         self.http_button.pack(side="right", padx=5)
@@ -415,6 +421,166 @@ class MappingDialog:
     
     def cancel_clicked(self):
         self.dialog.destroy()
+
+    def screenshot_ocr(self):
+        """执行屏幕截图OCR"""
+        try:
+            # 显示处理中提示
+            self.show_processing_message("正在进行屏幕截图OCR...")
+            
+            # 在后台线程中执行截图OCR
+            def do_screenshot_ocr():
+                try:
+                    # 捕获全屏截图
+                    screenshot = self.screenshot_manager.capture_fullscreen()
+                    
+                    if screenshot is None:
+                        self.root.after(0, lambda: messagebox.showerror("错误", "屏幕截图失败"))
+                        return
+                    
+                    # 保存截图
+                    screenshot_path = self.storage_manager.save_screenshot(screenshot, "screen_ocr")
+                    
+                    # OCR识别
+                    ocr_results = self.ocr_processor.process_image(screenshot)
+                    
+                    # 在主线程中显示结果
+                    self.root.after(0, lambda: self.show_ocr_results("屏幕截图OCR结果", ocr_results, screenshot_path))
+                    
+                except Exception as e:
+                    self.root.after(0, lambda: messagebox.showerror("错误", f"屏幕截图OCR失败: {str(e)}"))
+                finally:
+                    self.root.after(0, self.hide_processing_message)
+            
+            # 在后台线程中执行
+            threading.Thread(target=do_screenshot_ocr, daemon=True).start()
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"启动屏幕截图OCR失败: {str(e)}")
+    
+    def camera_ocr(self):
+        """执行摄像头OCR"""
+        try:
+            if not self.camera_manager.is_camera_running():
+                messagebox.showwarning("警告", "请先启动摄像头")
+                return
+            
+            # 显示处理中提示
+            self.show_processing_message("正在进行摄像头OCR...")
+            
+            # 在后台线程中执行摄像头OCR
+            def do_camera_ocr():
+                try:
+                    # 获取当前视频帧
+                    frame = self.camera_manager.capture_screenshot()
+                    
+                    if frame is None:
+                        self.root.after(0, lambda: messagebox.showerror("错误", "无法获取摄像头画面"))
+                        return
+                    
+                    # 保存截图
+                    screenshot_path = self.storage_manager.save_screenshot(frame, "camera_ocr")
+                    
+                    # OCR识别
+                    ocr_results = self.ocr_processor.process_image(frame)
+                    
+                    # 在主线程中显示结果
+                    self.root.after(0, lambda: self.show_ocr_results("摄像头OCR结果", ocr_results, screenshot_path))
+                    
+                except Exception as e:
+                    self.root.after(0, lambda: messagebox.showerror("错误", f"摄像头OCR失败: {str(e)}"))
+                finally:
+                    self.root.after(0, self.hide_processing_message)
+            
+            # 在后台线程中执行
+            threading.Thread(target=do_camera_ocr, daemon=True).start()
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"启动摄像头OCR失败: {str(e)}")
+    
+    def show_processing_message(self, message):
+        """显示处理中消息"""
+        if hasattr(self, 'processing_label'):
+            self.processing_label.destroy()
+        
+        self.processing_label = tk.Label(
+            self.root, 
+            text=message, 
+            font=("Arial", 12), 
+            fg="blue",
+            bg="lightyellow"
+        )
+        self.processing_label.pack(pady=5)
+        self.root.update()
+    
+    def hide_processing_message(self):
+        """隐藏处理中消息"""
+        if hasattr(self, 'processing_label'):
+            self.processing_label.destroy()
+    
+    def show_ocr_results(self, title, results, screenshot_path):
+        """显示OCR结果"""
+        # 创建结果窗口
+        result_window = tk.Toplevel(self.root)
+        result_window.title(title)
+        result_window.geometry("600x400")
+        
+        # 标题
+        title_label = tk.Label(result_window, text=title, font=("Arial", 16, "bold"))
+        title_label.pack(pady=10)
+        
+        # 截图路径
+        path_label = tk.Label(result_window, text=f"截图保存路径: {screenshot_path}", font=("Arial", 10))
+        path_label.pack(pady=5)
+        
+        # 结果框架
+        result_frame = ttk.LabelFrame(result_window, text="识别结果", padding=10)
+        result_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # 结果文本框
+        result_text = tk.Text(result_frame, wrap=tk.WORD, font=("Arial", 11))
+        scrollbar = ttk.Scrollbar(result_frame, orient="vertical", command=result_text.yview)
+        result_text.configure(yscrollcommand=scrollbar.set)
+        
+        result_text.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # 显示结果
+        if results:
+            result_text.insert(tk.END, "识别到的字段值:\n\n")
+            for key, value in results.items():
+                result_text.insert(tk.END, f"{key}: {value}\n")
+        else:
+            result_text.insert(tk.END, "未识别到任何字段值")
+        
+        result_text.config(state=tk.DISABLED)
+        
+        # 按钮框架
+        button_frame = tk.Frame(result_window)
+        button_frame.pack(fill="x", padx=20, pady=10)
+        
+        # 打开截图文件按钮
+        def open_screenshot():
+            try:
+                import os
+                import platform
+                if platform.system() == "Darwin":  # macOS
+                    os.system(f"open '{screenshot_path}'")
+                elif platform.system() == "Windows":
+                    os.system(f"start '{screenshot_path}'")
+                else:  # Linux
+                    os.system(f"xdg-open '{screenshot_path}'")
+            except Exception as e:
+                messagebox.showerror("错误", f"无法打开截图文件: {str(e)}")
+        
+        ttk.Button(button_frame, text="打开截图", command=open_screenshot).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="关闭", command=result_window.destroy).pack(side="right", padx=5)
+        
+        # 居中显示
+        result_window.update_idletasks()
+        x = (result_window.winfo_screenwidth() // 2) - (result_window.winfo_width() // 2)
+        y = (result_window.winfo_screenheight() // 2) - (result_window.winfo_height() // 2)
+        result_window.geometry(f"+{x}+{y}")
 
 
 if __name__ == "__main__":
