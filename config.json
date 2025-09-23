@@ -9,12 +9,12 @@
   },
   "ocr": {
     "field_mappings": {
-      "平均速度(rpm)": "avg_speed",
-      "最高速度(rpm)": "max_speed",
-      "最低速度(rpm)": "min_speed",
-      "速度偏差(rpm)": "speed_deviation",
-      "位置波动(max)": "position_deviation_max",
-      "位置波动(min)": "position_deviation_min"
+      "平均速度 (rpm)": "avg_speed",
+      "最高速度 (rpm)": "max_speed",
+      "最低速度 (rpm)": "min_speed",
+      "速度偏差 (rpm)": "speed_deviation",
+      "位置波动 (max)": "position_deviation_max",
+      "位置波动 (min)": "position_deviation_min"
     },
     "language": "ch",
     "use_angle_cls": true

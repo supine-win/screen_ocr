@@ -26,15 +26,15 @@ class OCRProcessor:
     def process_image(self, image: np.ndarray) -> Dict[str, str]:
         """处理图像并提取字段值"""
         try:
-            # 如果图像太大，先缩放
+            # 如果图像太大，先缩放 - 使用更保守的尺寸限制
             height, width = image.shape[:2]
-            max_size = 3000  # 设置最大尺寸限制
+            max_size = 1920  # 降低最大尺寸限制，避免内存问题
             
             if max(height, width) > max_size:
                 scale = max_size / max(height, width)
                 new_width = int(width * scale)
                 new_height = int(height * scale)
-                image = cv2.resize(image, (new_width, new_height))
+                image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
             
             # OCR识别
             result = self.ocr.ocr(image)

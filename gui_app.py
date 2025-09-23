@@ -553,7 +553,7 @@ class MonitorOCRApp:
         # 创建简单的选择对话框
         settings_window = tk.Toplevel(self.root)
         settings_window.title("截图区域设置")
-        settings_window.geometry("300x200")
+        settings_window.geometry("350x200")
         settings_window.transient(self.root)
         settings_window.grab_set()
         
