@@ -27,13 +27,7 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pip-
     
-    - name: Cache EasyOCR models
-      uses: actions/cache@v3
-      with:
-        path: ~/.EasyOCR
-        key: ${{ runner.os }}-easyocr-models-v1
-        restore-keys: |
-          ${{ runner.os }}-easyocr-models-
+    # 不再缓存EasyOCR模型，用户手动下载
     
     - name: Install dependencies
       run: |
@@ -42,11 +36,7 @@ jobs:
       env:
         PYTHONIOENCODING: utf-8
     
-    - name: Prepare EasyOCR models
-      run: |
-        python prepare_models_easyocr.py
-      env:
-        PYTHONIOENCODING: utf-8
+    # EasyOCR模型不再打包，用户使用时手动下载
     
     - name: Test packaging configuration
       run: |

@@ -43,6 +43,7 @@ Thumbs.db
 # Project specific
 screenshots/
 paddlex_models/
+easyocr_models/
 release/
 windows_build/
 
