@@ -6,16 +6,48 @@
 
 import sys
 import os
-import argparse
 from pathlib import Path
 
-# 在打包环境中，首先应用EasyOCR离线补丁
+# 在打包环境中，首先应用所有优化
 if getattr(sys, 'frozen', False):
+    print("  启动exe环境优化...")
+    
+    # 1. 应用EasyOCR离线补丁
     try:
         import easyocr_offline_patch
-        print("✅ EasyOCR离线补丁已应用")
+        print("  EasyOCR离线补丁已应用")
     except Exception as e:
-        print(f"⚠️  EasyOCR离线补丁应用失败: {e}")
+        print(f"   EasyOCR离线补丁应用失败: {e}")
+    
+    # 2. 应用exe优化设置
+    try:
+        from exe_optimization import optimize_for_exe, get_performance_tips
+        if optimize_for_exe():
+            # 首次启动提示
+            if not os.path.exists("./first_run_complete.flag"):
+                print("\n   首次启动说明:")
+                tips = get_performance_tips()
+                for tip in tips[:3]:  # 显示前3个关键提示
+                    print(f"    {tip}")
+                # 创建首次运行标记
+                with open("./first_run_complete.flag", "w") as f:
+                    f.write("first_run_completed")
+                print()
+    except ImportError:
+        print("   exe优化模块未找到，使用基础优化")
+        
+        # 基础优化设置
+        os.environ['TORCH_DISABLE_PIN_MEMORY_WARNING'] = '1'
+        os.environ['OMP_NUM_THREADS'] = '2'
+        
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                torch.set_num_threads(2)
+                torch.backends.cudnn.enabled = False
+                print("   基础Torch优化已应用")
+        except ImportError:
+            pass
 
 from gui_app import MonitorOCRApp
 from model_path_manager import ModelPathManager
@@ -23,6 +55,8 @@ from simple_logger import get_logger, log_info, log_error
 
 def main():
     """主函数"""
+    import argparse
+    
     # 创建调试信息（用于诊断Windows打包问题）
     try:
         debug_info = ModelPathManager.create_debug_info()

@@ -7,6 +7,7 @@ import os
 datas = [
     ('config.json', '.'),
     ('easyocr_offline_patch.py', '.'),  # 包含离线补丁
+    ('exe_optimization.py', '.'),       # 包含exe优化模块
 ]
 
 binaries = []
