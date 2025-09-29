@@ -61,6 +61,8 @@ def build_windows_executable():
         "--name=MonitorOCR_EasyOCR",   # Executable name
         "--icon=icon.ico",             # Icon file (if exists)
         f"--add-data=config.json{separator}.",    # Include config file
+        f"--add-data=debug_windows.py{separator}.",  # Include debug script
+        "--console",                    # Show console for debugging
     ]
     
     # Add EasyOCR models if they exist
@@ -71,12 +73,22 @@ def build_windows_executable():
     if Path("paddlex_models").exists():
         cmd.append(f"--add-data=paddlex_models{separator}paddlex_models")
     
-    # Hidden imports for EasyOCR
+    # Hidden imports for EasyOCR and optimization modules
     hidden_imports = [
         # EasyOCR and dependencies
         "easyocr",
         "easyocr.detection",
         "easyocr.recognition",
+        
+        # Optimization modules
+        "logger_config",
+        "model_path_manager",
+        "performance_monitor",
+        "cache_manager",
+        "error_handler",
+        "health_monitor",
+        "config_validator",
+        "ocr_processor_v2",
         "easyocr.utils",
         "easyocr.config",
         "torch",

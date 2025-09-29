@@ -7,15 +7,15 @@
 import cv2
 import numpy as np
 import hashlib
-import time
 from typing import Dict, List, Optional, Any, Tuple
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 
 from logger_config import get_logger
-from performance_monitor import performance_monitor, performance_timer, monitor_memory
+from performance_monitor import performance_monitor
 from cache_manager import OCRCache
-from error_handler import retry_on_error, ErrorHandler, ErrorType, CircuitBreaker
+from error_handler import ErrorHandler, ErrorType, CircuitBreaker
+from model_path_manager import ModelPathManager
 from config_validator import ConfigValidator
 
 logger = get_logger(__name__)
@@ -40,6 +40,9 @@ class OCRProcessorV2:
         self.ocr_engine = config.get('ocr', {}).get('engine', 'auto')
         self.field_mappings = config.get('ocr', {}).get('field_mappings', {})
         
+        # 设置模型路径环境
+        ModelPathManager.setup_easyocr_environment()
+        
         # 初始化OCR引擎
         self.easyocr_reader = None
         self.paddleocr_engine = None
@@ -58,16 +61,42 @@ class OCRProcessorV2:
         if self.ocr_engine in ['easyocr', 'auto']:
             try:
                 import easyocr
-                self.easyocr_reader = easyocr.Reader(
-                    ['ch_sim', 'en'],
-                    gpu=False,
-                    verbose=False
-                )
+                
+                # 获取模型路径
+                model_path = ModelPathManager.get_easyocr_model_path()
+                if model_path:
+                    logger.info(f"Using EasyOCR model path: {model_path}")
+                    
+                    # 尝试指定模型目录（如果支持）
+                    try:
+                        self.easyocr_reader = easyocr.Reader(
+                            ['ch_sim', 'en'],
+                            gpu=False,
+                            verbose=True,  # 临时启用详细日志帮助调试
+                            model_storage_directory=str(Path(model_path).parent)
+                        )
+                    except:
+                        # 回退到默认初始化
+                        logger.warning("Failed to use custom model path, using default")
+                        self.easyocr_reader = easyocr.Reader(
+                            ['ch_sim', 'en'],
+                            gpu=False,
+                            verbose=True
+                        )
+                else:
+                    logger.warning("No EasyOCR model path found, trying default initialization")
+                    self.easyocr_reader = easyocr.Reader(
+                        ['ch_sim', 'en'],
+                        gpu=False,
+                        verbose=True
+                    )
+                
                 logger.info("EasyOCR engine initialized successfully")
                 if self.ocr_engine == 'auto':
                     self.ocr_engine = 'easyocr'
             except Exception as e:
-                logger.warning(f"Failed to initialize EasyOCR: {e}")
+                logger.error(f"Failed to initialize EasyOCR: {e}")
+                logger.error(f"Exception type: {type(e).__name__}")
                 if self.ocr_engine == 'easyocr':
                     raise
         

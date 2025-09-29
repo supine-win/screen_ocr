@@ -28,8 +28,18 @@ class LoggerConfig:
     
     def setup_logging(self):
         """设置日志配置"""
+        import sys
+        
+        # 获取应用程序目录（支持打包环境）
+        if getattr(sys, 'frozen', False):
+            # 打包后的环境
+            app_dir = Path(sys.executable).parent
+        else:
+            # 开发环境
+            app_dir = Path.cwd()
+        
         # 创建日志目录
-        log_dir = Path("logs")
+        log_dir = app_dir / "logs"
         log_dir.mkdir(exist_ok=True)
         
         # 日志文件名（按日期）

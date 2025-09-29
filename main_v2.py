@@ -17,6 +17,7 @@ from performance_monitor import performance_monitor
 from cache_manager import CacheManager, OCRCache
 from error_handler import error_handler, ErrorType
 from health_monitor import health_blueprint, health_monitor
+from model_path_manager import ModelPathManager
 
 # 导入核心模块
 from config_manager import ConfigManager
@@ -38,8 +39,14 @@ class MonitorOCRV2:
         logger.info("MonitorOCR v2 - Starting up...")
         logger.info("=" * 60)
         
+        # 创建调试信息（打包环境）
+        debug_info = ModelPathManager.create_debug_info()
+        logger.info(f"Running in {debug_info['environment']} environment")
+        
         # 加载和验证配置
-        self.config = ConfigValidator.load_and_validate()
+        config_path = ModelPathManager.get_config_path()
+        logger.info(f"Using config file: {config_path}")
+        self.config = ConfigValidator.load_and_validate(config_path)
         logger.info("Configuration loaded and validated")
         
         # 初始化核心组件
