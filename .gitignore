@@ -53,3 +53,7 @@ logs/
 # Temporary files
 *.tmp
 *.temp
+
+debug_info.json
+debug_output.txt
+debug_*.jpg
