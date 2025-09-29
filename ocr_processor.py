@@ -212,64 +212,121 @@ class OCRProcessor:
     
     def _extract_field_value(self, texts: List[str], field_name: str) -> Optional[str]:
         """从文本列表中提取指定字段的值"""
-        print(f"  查找字段 '{field_name}' 在文本中...")
+        log_info(f"  查找字段 '{field_name}' 在文本中...")
         
-        # 清理字段名用于匹配
-        clean_field_name = field_name.replace(" (rpm)", "").replace(" (max)", "").replace(" (min)", "").strip()
-        print(f"  清理后的字段名: '{clean_field_name}'")
+        # 方法1：精确匹配整行文本中的字段和数值
+        full_text = " ".join(texts).replace(" ", "")  # 移除空格便于匹配
+        result = self._extract_value_from_text(full_text, field_name)
+        if result:
+            log_info(f"  通过精确匹配找到数值: {result}")
+            return result
         
-        # 查找包含字段名的文本
-        field_index = -1
+        # 方法2：分析每个文本片段
         for i, text in enumerate(texts):
-            # 模糊匹配 - 允许部分匹配
-            if clean_field_name in text or text in clean_field_name:
-                print(f"  在第{i+1}个文本找到字段: '{text}'")
-                field_index = i
-                break
+            log_info(f"  分析文本片段 {i+1}: '{text}'")
+            result = self._extract_value_from_text(text, field_name)
+            if result:
+                log_info(f"  在文本片段 {i+1} 找到数值: {result}")
+                return result
         
-        # 如果找到了字段名，查找后续的数值
-        if field_index >= 0:
-            # 查找之后的几个文本中的数字
-            for j in range(field_index, min(field_index + 5, len(texts))):
-                text = texts[j]
-                # 查找包含数字的文本
+        # 方法3：使用预定义模式匹配
+        result = self._extract_with_patterns(texts, field_name)
+        if result:
+            return result
+        
+        log_warning(f"  未找到字段 '{field_name}' 的值")
+        return None
+    
+    def _extract_value_from_text(self, text: str, field_name: str) -> Optional[str]:
+        """从单个文本中精确提取字段值 - 基于配置动态生成模式"""
+        
+        # 动态生成正则模式，基于字段名
+        patterns = self._generate_field_patterns(field_name)
+        
+        # 尝试匹配所有模式
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1)
+        
+        return None
+    
+    def _generate_field_patterns(self, field_name: str) -> List[str]:
+        """基于字段名动态生成匹配模式"""
+        patterns = []
+        
+        # 转义特殊字符，用于正则表达式
+        escaped_field = re.escape(field_name)
+        
+        # 去掉括号内容的基础字段名
+        base_field = field_name
+        for suffix in [" (rpm)", " (max)", " (min)", "（rpm）", "（max）", "（min）"]:
+            base_field = base_field.replace(suffix, "")
+        
+        escaped_base = re.escape(base_field)
+        
+        # 1. 精确匹配完整字段名
+        patterns.append(rf'{escaped_field}[：:\s]*(\d+\.?\d*)')
+        
+        # 2. 处理中英文括号差异
+        normalized_field = field_name.replace("(", "[（(]").replace(")", "[）)]")
+        normalized_field = re.escape(normalized_field).replace(r'\[（\(]', '[（(]').replace(r'\[）\)]', '[）)]')
+        patterns.append(rf'{normalized_field}[：:\s]*(\d+\.?\d*)')
+        
+        # 3. 基础字段名匹配（去掉括号部分）
+        if base_field != field_name:
+            patterns.append(rf'{escaped_base}[：:\s]*(\d+\.?\d*)')
+        
+        # 4. 特殊处理：如果字段包含特定关键词，生成更宽泛的模式
+        if any(keyword in field_name for keyword in ["max", "min", "最大", "最小"]):
+            # 提取关键词
+            if "(max)" in field_name or "（max）" in field_name:
+                patterns.append(rf'{escaped_base}.*?max.*?[：:\s]*(\d+\.?\d*)')
+            elif "(min)" in field_name or "（min）" in field_name:
+                patterns.append(rf'{escaped_base}.*?min.*?[：:\s]*(\d+\.?\d*)')
+        
+        return patterns
+    
+    def _extract_with_patterns(self, texts: List[str], field_name: str) -> Optional[str]:
+        """使用基于配置的模式匹配"""
+        
+        # 基于字段名生成多种匹配模式
+        patterns = self._generate_field_patterns(field_name)
+        
+        # 使用模式匹配全部文本
+        full_text = " ".join(texts)
+        for pattern in patterns:
+            match = re.search(pattern, full_text, re.IGNORECASE)
+            if match:
+                log_info(f"  通过模式 '{pattern}' 找到数值: {match.group(1)}")
+                return match.group(1)
+        
+        # 最后的后备方案：查找字段名后紧跟的数字
+        return self._fallback_extraction(texts, field_name)
+    
+    def _fallback_extraction(self, texts: List[str], field_name: str) -> Optional[str]:
+        """后备提取方法：简单的邻近搜索"""
+        
+        # 查找包含字段名的文本位置
+        base_field = field_name
+        for suffix in [" (rpm)", " (max)", " (min)", "（rpm）", "（max）", "（min）"]:
+            base_field = base_field.replace(suffix, "")
+        
+        for i, text in enumerate(texts):
+            if base_field in text:
+                # 在同一个文本中查找数字
                 numbers = re.findall(r'(\d+\.?\d*)', text)
                 if numbers:
-                    # 返回第一个找到的数字
-                    result = numbers[0]
-                    print(f"  在第{j+1}个文本找到数值: '{result}'")
-                    return result
+                    log_info(f"  后备方案：在文本 '{text}' 中找到数值: {numbers[0]}")
+                    return numbers[0]
+                
+                # 在后续文本中查找数字
+                for j in range(i + 1, min(i + 3, len(texts))):
+                    numbers = re.findall(r'(\d+\.?\d*)', texts[j])
+                    if numbers:
+                        log_info(f"  后备方案：在后续文本 '{texts[j]}' 中找到数值: {numbers[0]}")
+                        return numbers[0]
         
-        # 备选方案：在所有文本中查找特定模式
-        patterns_map = {
-            "avg_speed": ["606.537", "606", r"平均.*?(\d+\.?\d*)"],
-            "max_speed": ["652.313", "652313", "652", r"最高.*?(\d+\.?\d*)"],
-            "min_speed": ["572.205", "572205", "572", r"最低.*?(\d+\.?\d*)"],
-            "speed_deviation": ["45.7764", "45", r"偏差.*?(\d+\.?\d*)"],
-            "position_deviation_max": ["4", r"波动.*?max.*?(\d+)"],
-            "position_deviation_min": ["4", r"波动.*?min.*?(\d+)"]
-        }
-        
-        # 获取对应的映射键
-        for mapped_key, patterns in patterns_map.items():
-            if self.field_mappings.get(field_name) == mapped_key:
-                for pattern in patterns:
-                    if isinstance(pattern, str) and not pattern.startswith(r''):
-                        # 直接字符串匹配
-                        for text in texts:
-                            if pattern in text:
-                                print(f"  通过模式'{pattern}'找到数值")
-                                return pattern
-                    else:
-                        # 正则表达式匹配
-                        full_text = " ".join(texts)
-                        match = re.search(pattern, full_text, re.IGNORECASE)
-                        if match:
-                            result = match.group(1) if match.groups() else match.group(0)
-                            print(f"  通过正则'{pattern}'找到数值: {result}")
-                            return result
-        
-        print(f"  未找到字段 '{field_name}' 的值")
         return None
     
     def update_field_mappings(self, mappings: Dict[str, str]):
