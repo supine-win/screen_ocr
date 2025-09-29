@@ -1,10 +1,8 @@
 import cv2
 import numpy as np
-from paddleocr import PaddleOCR
-import cv2
-import numpy as np
 import re
-from typing import Dict, List
+from paddleocr import PaddleOCR
+from typing import Dict, List, Optional
 from pathlib import Path
 from model_manager import ModelManager
 from model_path_manager import ModelPathManager
