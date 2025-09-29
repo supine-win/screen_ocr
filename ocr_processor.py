@@ -48,13 +48,47 @@ class OCRProcessor:
             log_info(f"EasyOCR初始化参数: {base_params}")
             
             try:
-                # 使用完整参数初始化
-                self.easyocr_reader = easyocr.Reader(**base_params)
-                log_info("使用优化参数初始化EasyOCR成功")
+                # 在打包环境中，强制禁用网络访问
+                if getattr(sys, 'frozen', False):
+                    # 临时屏蔽网络下载功能
+                    import urllib.request
+                    original_urlopen = urllib.request.urlopen
+                    
+                    def blocked_urlopen(*args, **kwargs):
+                        raise Exception("Network access blocked in packaged mode")
+                    
+                    urllib.request.urlopen = blocked_urlopen
+                    
+                    try:
+                        # 使用完整参数初始化
+                        self.easyocr_reader = easyocr.Reader(**base_params)
+                        log_info("使用优化参数初始化EasyOCR成功（离线模式）")
+                    finally:
+                        # 恢复网络访问（虽然在打包环境中可能不需要）
+                        urllib.request.urlopen = original_urlopen
+                else:
+                    # 开发环境正常初始化
+                    self.easyocr_reader = easyocr.Reader(**base_params)
+                    log_info("使用优化参数初始化EasyOCR成功")
+                    
             except Exception as e:
                 # 回退到默认初始化
                 log_warning(f"使用优化参数失败({e})，尝试默认初始化")
-                self.easyocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=False, verbose=True)
+                try:
+                    # 在回退时也要考虑打包环境
+                    if getattr(sys, 'frozen', False):
+                        import urllib.request
+                        original_urlopen = urllib.request.urlopen
+                        urllib.request.urlopen = lambda *args, **kwargs: None
+                        try:
+                            self.easyocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=use_gpu, verbose=verbose)
+                        finally:
+                            urllib.request.urlopen = original_urlopen
+                    else:
+                        self.easyocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=use_gpu, verbose=verbose)
+                except Exception as fallback_error:
+                    log_error(f"所有EasyOCR初始化方式都失败: {fallback_error}")
+                    self.easyocr_reader = None
             
             self.use_easyocr = True
             log_info("EasyOCR初始化成功，将使用EasyOCR进行识别")

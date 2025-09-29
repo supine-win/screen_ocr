@@ -167,7 +167,7 @@ class ModelPathManager:
         model_path = ModelPathManager.get_easyocr_model_path()
         
         if not model_path:
-            return {}
+            return {'verbose': True}
         
         # 对于打包环境，需要特殊处理
         if getattr(sys, 'frozen', False):
@@ -183,14 +183,23 @@ class ModelPathManager:
             logger.info(f"Recognition models found: {len(recognition_models)}")
             
             if detection_models and recognition_models:
-                # 尝试多种可能的参数组合
-                return {
+                # 强制使用本地模型，完全禁用网络下载
+                params = {
                     'model_storage_directory': model_storage_dir,
                     'verbose': True
                 }
+                
+                # 设置额外的环境变量来禁用下载
+                os.environ['EASYOCR_DOWNLOAD_ENABLED'] = 'false'
+                os.environ['EASYOCR_OFFLINE_MODE'] = 'true'
+                
+                logger.info(f"Packaged mode: Using local models only from {model_storage_dir}")
+                return params
             else:
                 logger.warning("Required model files not found in packaged directory")
-                return {'verbose': True}  # 回退到默认行为
+                # 即使没有找到模型，也要禁用下载尝试
+                os.environ['EASYOCR_DOWNLOAD_ENABLED'] = 'false'
+                return {'verbose': True}
         
         # 开发环境：让EasyOCR使用默认路径
         return {'verbose': True}

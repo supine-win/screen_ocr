@@ -8,6 +8,15 @@ import sys
 import os
 import argparse
 from pathlib import Path
+
+# 在打包环境中，首先应用EasyOCR离线补丁
+if getattr(sys, 'frozen', False):
+    try:
+        import easyocr_offline_patch
+        print("✅ EasyOCR离线补丁已应用")
+    except Exception as e:
+        print(f"⚠️  EasyOCR离线补丁应用失败: {e}")
+
 from gui_app import MonitorOCRApp
 from model_path_manager import ModelPathManager
 from simple_logger import get_logger, log_info, log_error

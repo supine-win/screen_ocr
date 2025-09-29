@@ -42,14 +42,21 @@ jobs:
       env:
         PYTHONIOENCODING: utf-8
     
-    - name: Prepare EasyOCR and PaddleOCR models
+    - name: Prepare EasyOCR models
       run: |
-        python prepare_models_easyocr.py || python prepare_models.py
+        python prepare_models_easyocr.py
       env:
         PYTHONIOENCODING: utf-8
     
-    - name: Build executable with EasyOCR
-      run: python build_windows_easyocr.py
+    - name: Test packaging configuration
+      run: |
+        python test_packaging_config.py
+      env:
+        PYTHONIOENCODING: utf-8
+    
+    - name: Build executable with EasyOCR and models
+      run: |
+        python build_windows_with_models.py
       env:
         PYTHONIOENCODING: utf-8
     

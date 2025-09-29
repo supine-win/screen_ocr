@@ -6,6 +6,7 @@ import os
 # 收集EasyOCR和相关依赖
 datas = [
     ('config.json', '.'),
+    ('easyocr_offline_patch.py', '.'),  # 包含离线补丁
 ]
 
 binaries = []
@@ -82,17 +83,31 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('paddlex')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
-# 添加EasyOCR模型缓存目录（如果存在）
+# 添加EasyOCR模型文件（确保打包到正确位置）
 home_dir = os.path.expanduser("~")
 easyocr_model_dir = os.path.join(home_dir, ".EasyOCR", "model")
 if os.path.exists(easyocr_model_dir):
-    # 包含所有模型文件
-    datas.append((os.path.join(easyocr_model_dir, 'craft_mlt_25k.pth'), '.EasyOCR/model'))
-    datas.append((os.path.join(easyocr_model_dir, 'zh_sim_g2.pth'), '.EasyOCR/model'))
+    print(f"Found EasyOCR models in: {easyocr_model_dir}")
+    # 将模型文件打包到 easyocr_models 目录（与代码中的路径一致）
+    craft_model = os.path.join(easyocr_model_dir, 'craft_mlt_25k.pth')
+    zh_model = os.path.join(easyocr_model_dir, 'zh_sim_g2.pth')
+    
+    if os.path.exists(craft_model):
+        datas.append((craft_model, 'easyocr_models'))
+        print(f"Added craft model: {craft_model}")
+    
+    if os.path.exists(zh_model):
+        datas.append((zh_model, 'easyocr_models'))
+        print(f"Added zh model: {zh_model}")
+    
     # 如果有英文模型也包含
     en_model = os.path.join(easyocr_model_dir, 'english_g2.pth')
     if os.path.exists(en_model):
-        datas.append((en_model, '.EasyOCR/model'))
+        datas.append((en_model, 'easyocr_models'))
+        print(f"Added english model: {en_model}")
+else:
+    print(f"Warning: EasyOCR model directory not found at {easyocr_model_dir}")
+    print("Please run prepare_models_easyocr.py to download models first")
 
 a = Analysis(
     ['main.py'],
