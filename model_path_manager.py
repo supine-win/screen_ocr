@@ -64,14 +64,27 @@ class ModelPathManager:
             model_dir = str(Path(model_path))
             parent_dir = str(Path(model_path).parent)
             
-            # 多种可能的环境变量
+            # 设置关键的EasyOCR环境变量
             os.environ['EASYOCR_MODULE_PATH'] = parent_dir
             os.environ['EASYOCR_MODEL_PATH'] = model_dir
+            
+            # 仅在打包环境中设置用户目录，避免破坏开发环境
+            if getattr(sys, 'frozen', False):
+                if os.name == 'nt':
+                    os.environ['USERPROFILE'] = parent_dir
+                else:
+                    os.environ['HOME'] = parent_dir
+            
+            # 设置torch相关路径
             os.environ['TORCH_HOME'] = parent_dir
+            os.environ['XDG_CACHE_HOME'] = parent_dir
             
             # 确保EasyOCR能找到模型
-            import torch
-            torch.hub.set_dir(parent_dir)
+            try:
+                import torch
+                torch.hub.set_dir(parent_dir)
+            except ImportError:
+                pass  # 如果torch未安装，忽略
             
             logger.info(f"Set EASYOCR_MODULE_PATH to: {parent_dir}")
             logger.info(f"Set EASYOCR_MODEL_PATH to: {model_dir}")
@@ -101,6 +114,86 @@ class ModelPathManager:
         
         # 开发环境
         return "config.json"
+    
+    @staticmethod
+    def setup_easyocr_model_structure():
+        """为EasyOCR创建正确的模型目录结构"""
+        model_path = ModelPathManager.get_easyocr_model_path()
+        
+        if not model_path or not getattr(sys, 'frozen', False):
+            return False
+        
+        try:
+            model_dir = Path(model_path)
+            parent_dir = model_dir.parent
+            
+            # 创建EasyOCR期望的目录结构
+            easyocr_home = parent_dir / ".EasyOCR"
+            easyocr_model_dir = easyocr_home / "model"
+            
+            # 确保目录存在
+            easyocr_model_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 复制或链接模型文件到EasyOCR期望的位置
+            for model_file in model_dir.glob("*.pth"):
+                target_file = easyocr_model_dir / model_file.name
+                if not target_file.exists():
+                    try:
+                        # 尝试创建硬链接（更快）
+                        target_file.hardlink_to(model_file)
+                        logger.info(f"创建硬链接: {model_file.name}")
+                    except:
+                        # 回退到复制
+                        import shutil
+                        shutil.copy2(model_file, target_file)
+                        logger.info(f"复制模型文件: {model_file.name}")
+            
+            # 设置HOME环境变量指向我们的目录
+            if os.name == 'nt':
+                os.environ['USERPROFILE'] = str(parent_dir)
+            else:
+                os.environ['HOME'] = str(parent_dir)
+            
+            logger.info(f"EasyOCR模型结构设置完成: {easyocr_home}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"设置EasyOCR模型结构失败: {e}")
+            return False
+    
+    @staticmethod
+    def get_easyocr_reader_params():
+        """获取EasyOCR Reader的正确初始化参数"""
+        model_path = ModelPathManager.get_easyocr_model_path()
+        
+        if not model_path:
+            return {}
+        
+        # 对于打包环境，需要特殊处理
+        if getattr(sys, 'frozen', False):
+            # 打包环境：直接指定模型存储目录
+            model_storage_dir = str(Path(model_path).parent)
+            
+            # 检查是否有必要的模型文件
+            model_dir = Path(model_path)
+            detection_models = list(model_dir.glob("craft_*.pth"))
+            recognition_models = list(model_dir.glob("*_sim_*.pth"))
+            
+            logger.info(f"Detection models found: {len(detection_models)}")
+            logger.info(f"Recognition models found: {len(recognition_models)}")
+            
+            if detection_models and recognition_models:
+                # 尝试多种可能的参数组合
+                return {
+                    'model_storage_directory': model_storage_dir,
+                    'verbose': True
+                }
+            else:
+                logger.warning("Required model files not found in packaged directory")
+                return {'verbose': True}  # 回退到默认行为
+        
+        # 开发环境：让EasyOCR使用默认路径
+        return {'verbose': True}
     
     @staticmethod
     def create_debug_info():

@@ -14,9 +14,6 @@ class OCRProcessor:
         # 使用模型管理器设置路径
         self.model_manager = ModelManager()
         
-        # 设置模型路径环境（支持打包环境）
-        ModelPathManager.setup_easyocr_environment()
-        
         # 尝试使用EasyOCR作为主要OCR引擎
         self.use_easyocr = False
         self.easyocr_reader = None
@@ -24,24 +21,39 @@ class OCRProcessor:
             import easyocr
             log_info("初始化EasyOCR...")
             
-            # 获取模型路径
-            model_path = ModelPathManager.get_easyocr_model_path()
-            if model_path:
-                log_info(f"使用EasyOCR模型路径: {model_path}")
-                try:
-                    # 尝试使用自定义模型目录
-                    self.easyocr_reader = easyocr.Reader(
-                        ['ch_sim', 'en'], 
-                        gpu=False, 
-                        verbose=True,  # 启用详细日志
-                        model_storage_directory=str(Path(model_path).parent)
-                    )
-                except:
-                    # 回退到默认初始化
-                    log_warning("使用自定义路径失败，尝试默认初始化")
-                    self.easyocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=False, verbose=True)
-            else:
-                log_warning("未找到模型路径，使用默认初始化")
+            # 设置环境变量和模型结构
+            ModelPathManager.setup_easyocr_environment()
+            ModelPathManager.setup_easyocr_model_structure()
+            
+            # 获取正确的初始化参数
+            reader_params = ModelPathManager.get_easyocr_reader_params()
+            
+            # 从配置中读取GPU设置
+            easyocr_config = self.config.get('easyocr', {})
+            use_gpu = easyocr_config.get('use_gpu', True)
+            verbose = easyocr_config.get('verbose', True)
+            
+            # 基础参数
+            base_params = {
+                'lang_list': ['ch_sim', 'en'],
+                'gpu': use_gpu,
+                'verbose': verbose
+            }
+            
+            log_info(f"EasyOCR GPU设置: {use_gpu}")
+            
+            # 合并参数
+            base_params.update(reader_params)
+            
+            log_info(f"EasyOCR初始化参数: {base_params}")
+            
+            try:
+                # 使用完整参数初始化
+                self.easyocr_reader = easyocr.Reader(**base_params)
+                log_info("使用优化参数初始化EasyOCR成功")
+            except Exception as e:
+                # 回退到默认初始化
+                log_warning(f"使用优化参数失败({e})，尝试默认初始化")
                 self.easyocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=False, verbose=True)
             
             self.use_easyocr = True
@@ -54,12 +66,14 @@ class OCRProcessor:
         if not self.use_easyocr:
             try:
                 lang = config.get('language', 'ch')
-                print(f"初始化PaddleOCR 3.2.0，语言: {lang}")
+                use_gpu = config.get('use_gpu', False)
+                print(f"初始化PaddleOCR 3.2.0，语言: {lang}, GPU: {use_gpu}")
                 
                 # PaddleOCR 3.2.0针对中文优化的配置
                 self.ocr = PaddleOCR(
                     use_angle_cls=False,     # 禁用角度分类，提高稳定性
                     lang='ch',               # 强制使用中文
+                    use_gpu=use_gpu,         # 从配置读取GPU设置
                     # 针对中文文本优化的参数
                     det_limit_side_len=1280, # 增加检测边长限制
                     det_limit_type='max',    

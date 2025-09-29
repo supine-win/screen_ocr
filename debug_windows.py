@@ -162,7 +162,7 @@ def test_easyocr():
         
         # 尝试初始化
         print("正在初始化EasyOCR Reader...")
-        reader = easyocr.Reader(['ch_sim', 'en'], gpu=False, verbose=True)
+        reader = easyocr.Reader(['ch_sim', 'en'], gpu=True, verbose=True)
         print("✅ EasyOCR Reader初始化成功")
         
         # 简单测试

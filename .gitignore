@@ -57,3 +57,4 @@ logs/
 debug_info.json
 debug_output.txt
 debug_*.jpg
+test_*.py

@@ -18,7 +18,12 @@
     },
     "language": "ch",
     "use_angle_cls": true,
-    "use_absolute_value": true
+    "use_absolute_value": true,
+    "use_gpu": false,
+    "easyocr": {
+      "use_gpu": false,
+      "verbose": true
+    }
   },
   "storage": {
     "screenshot_dir": "./screenshots",
