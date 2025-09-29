@@ -12,41 +12,65 @@ import datetime
 
 def check_models():
     """检查EasyOCR模型是否存在"""
-    home_dir = Path.home()
-    model_dir = home_dir / ".EasyOCR" / "model"
-    
     required_models = [
-        "craft_mlt_25k.pth",
-        "zh_sim_g2.pth"
+        "craft_mlt_25k.pth",  # 检测模型
+        "zh_sim_g2.pth"       # 中文识别模型
     ]
     
     print("检查EasyOCR模型...")
-    print(f"模型目录: {model_dir}")
     
-    if not model_dir.exists():
-        print("❌ EasyOCR模型目录不存在")
-        return False
+    # 方案1: 检查本地easyocr_models目录
+    local_model_dir = Path("easyocr_models")
+    if local_model_dir.exists():
+        print(f"✅ 本地模型目录: {local_model_dir}")
+        models_found = []
+        for model_file in local_model_dir.glob("*.pth"):
+            size_mb = model_file.stat().st_size / (1024 * 1024)
+            print(f"✅ {model_file.name}: {size_mb:.1f} MB")
+            models_found.append(model_file.name)
+        
+        # 检查是否有必需的模型
+        missing = [m for m in required_models if m not in models_found]
+        if missing:
+            print(f"⚠️  缺失必需模型: {missing}")
+            print("但找到其他模型文件，可能仍然可用")
+        
+        if models_found:
+            print(f"✅ 找到 {len(models_found)} 个模型文件")
+            return True
     
-    missing_models = []
-    for model in required_models:
-        model_path = model_dir / model
-        if model_path.exists():
-            size_mb = model_path.stat().st_size / (1024 * 1024)
-            print(f"✅ {model}: {size_mb:.1f} MB")
+    # 方案2: 检查用户的.EasyOCR目录
+    home_dir = Path.home()
+    home_model_dir = home_dir / ".EasyOCR" / "model"
+    
+    if home_model_dir.exists():
+        print(f"✅ 用户模型目录: {home_model_dir}")
+        missing_models = []
+        for model in required_models:
+            model_path = home_model_dir / model
+            if model_path.exists():
+                size_mb = model_path.stat().st_size / (1024 * 1024)
+                print(f"✅ {model}: {size_mb:.1f} MB")
+            else:
+                missing_models.append(model)
+                print(f"❌ {model}: 缺失")
+        
+        if not missing_models:
+            print("✅ 所有必需的模型文件都存在")
+            return True
         else:
-            missing_models.append(model)
-            print(f"❌ {model}: 缺失")
+            print(f"\n缺失的模型文件: {missing_models}")
     
-    if missing_models:
-        print("\n缺失的模型文件:")
-        for model in missing_models:
-            print(f"  - {model}")
-        print("\n请先运行以下命令下载模型:")
-        print("python prepare_models_easyocr.py")
-        return False
+    # 都没有找到
+    print("❌ 未找到EasyOCR模型文件")
+    print("\n请确保模型文件位于以下位置之一:")
+    print(f"1. 本地目录: {local_model_dir}")
+    print(f"2. 用户目录: {home_model_dir}")
+    print("\n获取模型的方法:")
+    print("- 运行: python prepare_models_easyocr.py")
+    print("- 或手动下载模型到 easyocr_models/ 目录")
     
-    print("✅ 所有必需的模型文件都存在")
-    return True
+    return False
 
 def prepare_build():
     """准备打包环境"""

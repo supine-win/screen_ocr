@@ -83,31 +83,52 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('paddlex')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
-# 添加EasyOCR模型文件（确保打包到正确位置）
-home_dir = os.path.expanduser("~")
-easyocr_model_dir = os.path.join(home_dir, ".EasyOCR", "model")
-if os.path.exists(easyocr_model_dir):
-    print(f"Found EasyOCR models in: {easyocr_model_dir}")
-    # 将模型文件打包到 easyocr_models 目录（与代码中的路径一致）
-    craft_model = os.path.join(easyocr_model_dir, 'craft_mlt_25k.pth')
-    zh_model = os.path.join(easyocr_model_dir, 'zh_sim_g2.pth')
+# 添加EasyOCR模型文件（支持多种来源）
+def add_easyocr_models():
+    """添加EasyOCR模型文件到打包"""
+    added_models = []
     
-    if os.path.exists(craft_model):
-        datas.append((craft_model, 'easyocr_models'))
-        print(f"Added craft model: {craft_model}")
+    # 方案1: 检查本地easyocr_models目录（用户自定义目录）
+    local_model_dir = "easyocr_models"
+    if os.path.exists(local_model_dir):
+        print(f"Found local EasyOCR models in: {local_model_dir}")
+        for model_file in os.listdir(local_model_dir):
+            if model_file.endswith('.pth'):
+                src_path = os.path.join(local_model_dir, model_file)
+                datas.append((src_path, 'easyocr_models'))
+                added_models.append(model_file)
+                size_mb = os.path.getsize(src_path) / (1024*1024)
+                print(f"Added local model: {model_file} ({size_mb:.1f} MB)")
     
-    if os.path.exists(zh_model):
-        datas.append((zh_model, 'easyocr_models'))
-        print(f"Added zh model: {zh_model}")
+    # 方案2: 如果本地目录没有模型，尝试用户的.EasyOCR目录
+    if not added_models:
+        home_dir = os.path.expanduser("~")
+        easyocr_model_dir = os.path.join(home_dir, ".EasyOCR", "model")
+        if os.path.exists(easyocr_model_dir):
+            print(f"Found EasyOCR models in: {easyocr_model_dir}")
+            
+            required_models = ['craft_mlt_25k.pth', 'zh_sim_g2.pth', 'english_g2.pth']
+            for model_name in required_models:
+                model_path = os.path.join(easyocr_model_dir, model_name)
+                if os.path.exists(model_path):
+                    datas.append((model_path, 'easyocr_models'))
+                    added_models.append(model_name)
+                    size_mb = os.path.getsize(model_path) / (1024*1024)
+                    print(f"Added home model: {model_name} ({size_mb:.1f} MB)")
     
-    # 如果有英文模型也包含
-    en_model = os.path.join(easyocr_model_dir, 'english_g2.pth')
-    if os.path.exists(en_model):
-        datas.append((en_model, 'easyocr_models'))
-        print(f"Added english model: {en_model}")
-else:
-    print(f"Warning: EasyOCR model directory not found at {easyocr_model_dir}")
-    print("Please run prepare_models_easyocr.py to download models first")
+    if not added_models:
+        print("Warning: No EasyOCR models found!")
+        print("Please ensure models are in:")
+        print("  1. ./easyocr_models/ directory, or")
+        print("  2. ~/.EasyOCR/model/ directory")
+        print("Run 'python prepare_models_easyocr.py' to download models")
+    else:
+        print(f"Total models added: {len(added_models)}")
+    
+    return len(added_models) > 0
+
+# 执行模型添加
+add_easyocr_models()
 
 a = Analysis(
     ['main.py'],

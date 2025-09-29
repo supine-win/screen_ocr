@@ -4,6 +4,7 @@ import re
 from paddleocr import PaddleOCR
 from typing import Dict, List, Optional
 from pathlib import Path
+import sys
 from model_manager import ModelManager
 from model_path_manager import ModelPathManager
 from simple_logger import log_info, log_error, log_warning
@@ -30,19 +31,38 @@ class OCRProcessor:
             
             # 从配置中读取GPU设置
             easyocr_config = self.config.get('easyocr', {})
-            use_gpu = easyocr_config.get('use_gpu', True)
+            use_gpu = easyocr_config.get('use_gpu', False)
             verbose = easyocr_config.get('verbose', True)
+            model_storage_directory = easyocr_config.get('model_storage_directory', './easyocr_models')
+
+            # 检查本地模型目录是否存在
+            local_model_dir = Path(model_storage_directory)
+            if local_model_dir.exists():
+                models = list(local_model_dir.glob("*.pth"))
+                log_info(f"本地模型目录: {model_storage_directory}")  
+                log_info(f"找到模型文件: {len(models)} 个")
+                for model in models:
+                    size_mb = model.stat().st_size / (1024 * 1024)
+                    log_info(f"  - {model.name}: {size_mb:.1f} MB")
+            else:
+                log_warning(f"本地模型目录不存在: {model_storage_directory}")
             
-            # 基础参数
+            # 基础参数 - 根据EasyOCR官方API
             base_params = {
                 'lang_list': ['ch_sim', 'en'],
                 'gpu': use_gpu,
-                'verbose': verbose
+                'verbose': verbose,
+                'model_storage_directory': str(local_model_dir.absolute()) if local_model_dir.exists() else None,
+                'download_enabled': True  # 允许下载，但优先使用本地模型
             }
             
-            log_info(f"EasyOCR GPU设置: {use_gpu}")
+            # 移除None值的参数
+            base_params = {k: v for k, v in base_params.items() if v is not None}
             
-            # 合并参数
+            log_info(f"EasyOCR GPU设置: {use_gpu}")
+            log_info(f"模型存储目录: {base_params.get('model_storage_directory', '默认')}")
+            
+            # 合并来自ModelPathManager的参数（用于打包环境）
             base_params.update(reader_params)
             
             log_info(f"EasyOCR初始化参数: {base_params}")

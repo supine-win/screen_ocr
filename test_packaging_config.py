@@ -123,7 +123,7 @@ def test_spec_file():
         return False
     
     # 检查spec文件内容
-    spec_content = spec_file.read_text()
+    spec_content = spec_file.read_text(encoding='utf-8')
     
     checks = [
         ("easyocr_offline_patch.py", "离线补丁包含"),

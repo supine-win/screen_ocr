@@ -22,7 +22,8 @@
     "use_gpu": false,
     "easyocr": {
       "use_gpu": false,
-      "verbose": true
+      "verbose": true,
+      "model_storage_directory": "./easyocr_models"
     }
   },
   "storage": {
