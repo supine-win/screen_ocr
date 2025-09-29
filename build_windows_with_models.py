@@ -11,66 +11,26 @@ import shutil
 import datetime
 
 def check_models():
-    """检查EasyOCR模型是否存在"""
-    required_models = [
-        "craft_mlt_25k.pth",  # 检测模型
-        "zh_sim_g2.pth"       # 中文识别模型
-    ]
+    """检查模型配置（模型不打包，用户手动下载）"""
+    print("EasyOCR模型配置检查...")
+    print("-" * 40)
+    print("✅ 模型策略: 用户手动下载")
+    print("   - exe不包含模型（体积更小）")
+    print("   - 用户首次使用时下载模型")
+    print("   - 模型放入 easyocr_models/ 目录")
+    print("-" * 40)
     
-    print("检查EasyOCR模型...")
-    
-    # 方案1: 检查本地easyocr_models目录
+    # 仅供参考，显示本地是否有模型
     local_model_dir = Path("easyocr_models")
     if local_model_dir.exists():
-        print(f"✅ 本地模型目录: {local_model_dir}")
-        models_found = []
-        for model_file in local_model_dir.glob("*.pth"):
-            size_mb = model_file.stat().st_size / (1024 * 1024)
-            print(f"✅ {model_file.name}: {size_mb:.1f} MB")
-            models_found.append(model_file.name)
-        
-        # 检查是否有必需的模型
-        missing = [m for m in required_models if m not in models_found]
-        if missing:
-            print(f"⚠️  缺失必需模型: {missing}")
-            print("但找到其他模型文件，可能仍然可用")
-        
-        if models_found:
-            print(f"✅ 找到 {len(models_found)} 个模型文件")
-            return True
+        models = list(local_model_dir.glob("*.pth"))
+        if models:
+            print(f"\n参考：本地有 {len(models)} 个模型文件（不会打包）")
+            total_size = sum(m.stat().st_size for m in models) / (1024*1024)
+            print(f"总大小: {total_size:.1f} MB")
     
-    # 方案2: 检查用户的.EasyOCR目录
-    home_dir = Path.home()
-    home_model_dir = home_dir / ".EasyOCR" / "model"
-    
-    if home_model_dir.exists():
-        print(f"✅ 用户模型目录: {home_model_dir}")
-        missing_models = []
-        for model in required_models:
-            model_path = home_model_dir / model
-            if model_path.exists():
-                size_mb = model_path.stat().st_size / (1024 * 1024)
-                print(f"✅ {model}: {size_mb:.1f} MB")
-            else:
-                missing_models.append(model)
-                print(f"❌ {model}: 缺失")
-        
-        if not missing_models:
-            print("✅ 所有必需的模型文件都存在")
-            return True
-        else:
-            print(f"\n缺失的模型文件: {missing_models}")
-    
-    # 都没有找到
-    print("❌ 未找到EasyOCR模型文件")
-    print("\n请确保模型文件位于以下位置之一:")
-    print(f"1. 本地目录: {local_model_dir}")
-    print(f"2. 用户目录: {home_model_dir}")
-    print("\n获取模型的方法:")
-    print("- 运行: python prepare_models_easyocr.py")
-    print("- 或手动下载模型到 easyocr_models/ 目录")
-    
-    return False
+    print("\n✅ 配置检查通过（模型由用户提供）")
+    return True
 
 def prepare_build():
     """准备打包环境"""
@@ -190,30 +150,53 @@ def verify_build():
 ## 文件信息
 - 可执行文件: MonitorOCR_EasyOCR.exe
 - 文件大小: {size_mb:.1f} MB
-- 包含模型: ✅ (离线运行)
+- 模型策略: 用户手动下载（体积更小）
+
+## 首次使用 - 下载模型
+将以下模型文件下载到 `easyocr_models/` 目录：
+
+**必需模型：**
+- craft_mlt_25k.pth (检测模型, ~79MB)
+- zh_sim_g2.pth (中文识别, ~21MB)
+
+**下载方式：**
+1. 自动下载：运行 `python prepare_models_easyocr.py`
+2. 手动下载：从 https://github.com/JaidedAI/EasyOCR/releases
 
 ## 运行说明
-1. 下载所有文件到同一目录
-2. 双击运行 MonitorOCR_EasyOCR.exe
-3. 无需Python环境，无需网络连接
+1. 创建 `easyocr_models` 文件夹
+2. 下载模型文件到该文件夹
+3. 双击运行 MonitorOCR_EasyOCR.exe
 4. 配置文件: config.json
 
 ## 特性
-- ✅ 完全离线运行
-- ✅ 内置EasyOCR模型
+- ✅ 无需Python环境
+- ✅ 下载模型后完全离线运行
 - ✅ 支持中英文识别
 - ✅ GPU可选配置
+- ✅ 体积小巧（不含模型）
 
-## 配置GPU
+## 配置
 编辑 config.json 文件:
 ```json
 {{
   "ocr": {{
     "easyocr": {{
-      "use_gpu": true
+      "use_gpu": false,
+      "model_storage_directory": "./easyocr_models"
     }}
   }}
 }}
+```
+
+## 目录结构
+```
+MonitorOCR/
+├── MonitorOCR_EasyOCR.exe
+├── config.json
+└── easyocr_models/          # 手动创建并放入模型
+    ├── craft_mlt_25k.pth
+    └── zh_sim_g2.pth
 ```
 
 构建时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}

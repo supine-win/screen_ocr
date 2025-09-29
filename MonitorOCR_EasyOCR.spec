@@ -83,52 +83,46 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('paddlex')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
-# 添加EasyOCR模型文件（支持多种来源）
-def add_easyocr_models():
-    """添加EasyOCR模型文件到打包"""
-    added_models = []
+# 不再打包EasyOCR模型文件，让用户手动下载
+# 创建空的模型目录结构
+def create_model_directory_structure():
+    """创建模型目录结构但不包含模型文件"""
+    print("Creating EasyOCR model directory structure...")
     
-    # 方案1: 检查本地easyocr_models目录（用户自定义目录）
-    local_model_dir = "easyocr_models"
-    if os.path.exists(local_model_dir):
-        print(f"Found local EasyOCR models in: {local_model_dir}")
-        for model_file in os.listdir(local_model_dir):
-            if model_file.endswith('.pth'):
-                src_path = os.path.join(local_model_dir, model_file)
-                datas.append((src_path, 'easyocr_models'))
-                added_models.append(model_file)
-                size_mb = os.path.getsize(src_path) / (1024*1024)
-                print(f"Added local model: {model_file} ({size_mb:.1f} MB)")
-    
-    # 方案2: 如果本地目录没有模型，尝试用户的.EasyOCR目录
-    if not added_models:
-        home_dir = os.path.expanduser("~")
-        easyocr_model_dir = os.path.join(home_dir, ".EasyOCR", "model")
-        if os.path.exists(easyocr_model_dir):
-            print(f"Found EasyOCR models in: {easyocr_model_dir}")
-            
-            required_models = ['craft_mlt_25k.pth', 'zh_sim_g2.pth', 'english_g2.pth']
-            for model_name in required_models:
-                model_path = os.path.join(easyocr_model_dir, model_name)
-                if os.path.exists(model_path):
-                    datas.append((model_path, 'easyocr_models'))
-                    added_models.append(model_name)
-                    size_mb = os.path.getsize(model_path) / (1024*1024)
-                    print(f"Added home model: {model_name} ({size_mb:.1f} MB)")
-    
-    if not added_models:
-        print("Warning: No EasyOCR models found!")
-        print("Please ensure models are in:")
-        print("  1. ./easyocr_models/ directory, or")
-        print("  2. ~/.EasyOCR/model/ directory")
-        print("Run 'python prepare_models_easyocr.py' to download models")
-    else:
-        print(f"Total models added: {len(added_models)}")
-    
-    return len(added_models) > 0
+    # 创建README文件说明如何下载模型
+    readme_content = """# EasyOCR模型文件说明
 
-# 执行模型添加
-add_easyocr_models()
+请将以下模型文件放入此目录：
+
+必需模型：
+- craft_mlt_25k.pth (检测模型, 约79MB)
+- zh_sim_g2.pth (中文识别模型, 约21MB)
+
+可选模型：
+- english_g2.pth (英文识别模型, 约14MB)
+
+下载方式：
+1. 运行 python prepare_models_easyocr.py
+2. 从 ~/.EasyOCR/model/ 复制到此目录
+3. 或从 https://github.com/JaidedAI/EasyOCR/releases 下载
+
+注意：模型文件必须放在与exe同目录的 easyocr_models 文件夹中
+"""
+    
+    # 创建临时README文件
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+        f.write(readme_content)
+        readme_path = f.name
+    
+    # 添加README到打包
+    datas.append((readme_path, 'easyocr_models'))
+    print("Added README.md for model directory")
+    
+    return True
+
+# 创建模型目录结构（不包含实际模型）
+create_model_directory_structure()
 
 a = Analysis(
     ['main.py'],

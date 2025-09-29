@@ -80,36 +80,32 @@ def test_packaged_environment():
             pass
 
 def test_model_files():
-    """测试模型文件是否存在"""
+    """测试模型策略（现在模型不打包，用户手动下载）"""
     print("\n" + "=" * 40)
-    print("检查EasyOCR模型文件")
+    print("检查EasyOCR模型策略")
     print("=" * 40)
     
-    home_dir = Path.home()
-    model_dir = home_dir / ".EasyOCR" / "model"
+    print("✅ 模型策略: 用户手动下载")
+    print("   - 模型不打包进exe（减小体积）")
+    print("   - 用户使用时下载到 easyocr_models/ 目录")
+    print("   - 支持完全离线运行（下载后）")
     
-    required_models = [
-        "craft_mlt_25k.pth",
-        "zh_sim_g2.pth"
-    ]
-    
-    if not model_dir.exists():
-        print("❌ EasyOCR模型目录不存在")
-        print(f"   期望路径: {model_dir}")
-        print("   请运行: python prepare_models_easyocr.py")
-        return False
-    
-    all_found = True
-    for model in required_models:
-        model_path = model_dir / model
-        if model_path.exists():
-            size_mb = model_path.stat().st_size / (1024 * 1024)
-            print(f"✅ {model}: {size_mb:.1f} MB")
+    # 检查本地是否有模型（仅供参考，不影响构建）
+    local_model_dir = Path("easyocr_models")
+    if local_model_dir.exists():
+        models = list(local_model_dir.glob("*.pth"))
+        if models:
+            print(f"\n参考: 本地发现 {len(models)} 个模型文件（不会打包）:")
+            for model in models[:3]:  # 只显示前3个
+                size_mb = model.stat().st_size / (1024 * 1024)
+                print(f"   - {model.name}: {size_mb:.1f} MB")
         else:
-            print(f"❌ {model}: 缺失")
-            all_found = False
+            print("\n参考: 本地无模型文件（正常）")
+    else:
+        print("\n参考: 本地模型目录不存在（正常）")
     
-    return all_found
+    # 对于GitHub Actions，这总是返回True，因为模型不再是构建要求
+    return True
 
 def test_spec_file():
     """测试spec文件配置"""
@@ -128,8 +124,8 @@ def test_spec_file():
     checks = [
         ("easyocr_offline_patch.py", "离线补丁包含"),
         ("easyocr_models", "模型目录配置"),
-        ("craft_mlt_25k.pth", "检测模型配置"),
-        ("zh_sim_g2.pth", "识别模型配置"),
+        ("create_model_directory_structure", "模型目录结构创建函数"),
+        ("EasyOCR模型文件说明", "模型下载说明文档"),
     ]
     
     all_good = True
