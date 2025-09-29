@@ -7,15 +7,38 @@
 import sys
 import os
 import argparse
+from pathlib import Path
 from gui_app import MonitorOCRApp
+from model_path_manager import ModelPathManager
+from simple_logger import get_logger, log_info, log_error
 
 def main():
     """主函数"""
+    # 创建调试信息（用于诊断Windows打包问题）
+    try:
+        debug_info = ModelPathManager.create_debug_info()
+        print(f"运行环境: {debug_info['environment']}")
+    except Exception as e:
+        print(f"调试信息创建失败: {e}")
+    
     parser = argparse.ArgumentParser(description='监控OCR系统')
     parser.add_argument('--no-gui', action='store_true', help='无GUI模式运行')
     parser.add_argument('--config', default='config.json', help='配置文件路径')
+    parser.add_argument('--debug', action='store_true', help='运行调试检查')
     
     args = parser.parse_args()
+    
+    # 调试模式
+    if args.debug:
+        try:
+            import debug_windows
+            debug_windows.main()
+            return
+        except ImportError:
+            print("调试模块不可用")
+        except Exception as e:
+            print(f"调试失败: {e}")
+        return
     
     if args.no_gui:
         # 无GUI模式 - 仅启动HTTP服务
@@ -25,7 +48,7 @@ def main():
         from config_manager import ConfigManager
         from http_server import HTTPServer
         
-        print("启动无GUI模式...")
+        log_info("启动无GUI模式...")
         
         # 初始化组件
         config_manager = ConfigManager(args.config)

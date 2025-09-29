@@ -18,7 +18,7 @@ if not exist "logs" mkdir logs
 echo 1. 运行调试检查
 echo 2. 启动应用 (无GUI模式)
 echo 3. 启动应用 (GUI模式)
-echo 4. 健康检查
+echo 4. 运行调试模式
 echo 5. 查看日志
 echo 6. 退出
 echo.
@@ -34,8 +34,8 @@ if "%choice%"=="1" (
     echo 启动GUI模式...
     MonitorOCR_EasyOCR.exe
 ) else if "%choice%"=="4" (
-    echo 运行健康检查...
-    MonitorOCR_EasyOCR.exe --health-check
+    echo 运行调试模式...
+    MonitorOCR_EasyOCR.exe --debug
 ) else if "%choice%"=="5" (
     echo 查看最新日志文件...
     if exist "logs\" (

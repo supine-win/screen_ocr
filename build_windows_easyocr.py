@@ -80,15 +80,19 @@ def build_windows_executable():
         "easyocr.detection",
         "easyocr.recognition",
         
-        # Optimization modules
+        # Optimization modules (v2)
         "logger_config",
-        "model_path_manager",
+        "model_path_manager", 
         "performance_monitor",
         "cache_manager",
         "error_handler",
         "health_monitor",
         "config_validator",
         "ocr_processor_v2",
+        
+        # Original version modules
+        "simple_logger",
+        "ocr_processor",
         "easyocr.utils",
         "easyocr.config",
         "torch",

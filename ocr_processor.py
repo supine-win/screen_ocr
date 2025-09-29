@@ -1,31 +1,56 @@
 import cv2
 import numpy as np
 from paddleocr import PaddleOCR
+import cv2
+import numpy as np
 import re
-from typing import Dict, List, Optional, Tuple
-import json
-import os
-import sys
+from typing import Dict, List
+from pathlib import Path
 from model_manager import ModelManager
+from model_path_manager import ModelPathManager
+from simple_logger import log_info, log_error, log_warning
 
 class OCRProcessor:
     def __init__(self, config: dict):
         self.config = config
-        
         # 使用模型管理器设置路径
         self.model_manager = ModelManager()
+        
+        # 设置模型路径环境（支持打包环境）
+        ModelPathManager.setup_easyocr_environment()
         
         # 尝试使用EasyOCR作为主要OCR引擎
         self.use_easyocr = False
         self.easyocr_reader = None
         try:
             import easyocr
-            print("初始化EasyOCR...")
-            self.easyocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=False, verbose=False)
+            log_info("初始化EasyOCR...")
+            
+            # 获取模型路径
+            model_path = ModelPathManager.get_easyocr_model_path()
+            if model_path:
+                log_info(f"使用EasyOCR模型路径: {model_path}")
+                try:
+                    # 尝试使用自定义模型目录
+                    self.easyocr_reader = easyocr.Reader(
+                        ['ch_sim', 'en'], 
+                        gpu=False, 
+                        verbose=True,  # 启用详细日志
+                        model_storage_directory=str(Path(model_path).parent)
+                    )
+                except:
+                    # 回退到默认初始化
+                    log_warning("使用自定义路径失败，尝试默认初始化")
+                    self.easyocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=False, verbose=True)
+            else:
+                log_warning("未找到模型路径，使用默认初始化")
+                self.easyocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=False, verbose=True)
+            
             self.use_easyocr = True
-            print("EasyOCR初始化成功，将使用EasyOCR进行识别")
+            log_info("EasyOCR初始化成功，将使用EasyOCR进行识别")
         except Exception as e:
-            print(f"EasyOCR初始化失败: {e}")
+            log_error(f"EasyOCR初始化失败: {e}")
+            log_error(f"错误类型: {type(e).__name__}")
         
         # 如果EasyOCR不可用，使用PaddleOCR作为备选
         if not self.use_easyocr:
