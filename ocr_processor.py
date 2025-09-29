@@ -307,8 +307,13 @@ class OCRProcessor:
             if match:
                 number_str = match.group(1)
                 if self.use_absolute_value:
-                    # 取绝对值
-                    abs_value = str(abs(float(number_str)))
+                    # 取绝对值，保持原始数据类型
+                    if '.' in number_str:
+                        # 浮点数
+                        abs_value = str(abs(float(number_str)))
+                    else:
+                        # 整数
+                        abs_value = str(abs(int(number_str)))
                     log_info(f"  数值处理：{number_str} -> {abs_value} (取绝对值)")
                     return abs_value
                 else:
