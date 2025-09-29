@@ -44,9 +44,21 @@ jobs:
       env:
         PYTHONIOENCODING: utf-8
     
-    - name: Build executable with EasyOCR and models
+    - name: Test EasyOCR dependencies
       run: |
-        python build_windows_with_models.py
+        python test_paddlex_version_fix.py
+      env:
+        PYTHONIOENCODING: utf-8
+    
+    - name: Build executable - onefile mode (single exe)
+      run: |
+        python build_windows_modes.py --mode onefile
+      env:
+        PYTHONIOENCODING: utf-8
+        
+    - name: Build executable - onedir mode (directory distribution)
+      run: |
+        python build_windows_modes.py --mode onedir
       env:
         PYTHONIOENCODING: utf-8
     

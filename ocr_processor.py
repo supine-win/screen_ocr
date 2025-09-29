@@ -1,22 +1,18 @@
 import cv2
 import numpy as np
 import re
-from paddleocr import PaddleOCR
+import os
 from typing import Dict, List, Optional
 from pathlib import Path
 import sys
-from model_manager import ModelManager
 from model_path_manager import ModelPathManager
 from simple_logger import log_info, log_error, log_warning
 
 class OCRProcessor:
     def __init__(self, config: dict):
         self.config = config
-        # 使用模型管理器设置路径
-        self.model_manager = ModelManager()
         
-        # 尝试使用EasyOCR作为主要OCR引擎
-        self.use_easyocr = False
+        # EasyOCR-only版本，移除PaddleOCR支持
         self.easyocr_reader = None
         try:
             import easyocr
@@ -94,83 +90,155 @@ class OCRProcessor:
             try:
                 # 在打包环境中，强制禁用网络访问
                 if getattr(sys, 'frozen', False):
-                    # 临时屏蔽网络下载功能
+                    # 完全离线模式初始化
+                    log_info("打包环境：启用完全离线模式")
+
+                    # 1. 彻底屏蔽所有网络模块
                     import urllib.request
+                    import urllib.parse
+                    import urllib.error
+                    import socket
+                    import ssl
+
+                    # 保存原始函数
                     original_urlopen = urllib.request.urlopen
-                    
-                    def blocked_urlopen(*args, **kwargs):
-                        raise Exception("Network access blocked in packaged mode")
-                    
-                    urllib.request.urlopen = blocked_urlopen
-                    
+                    original_urlretrieve = urllib.request.urlretrieve
+                    original_socket_create = socket.socket
+
+                    def blocked_network(*args, **kwargs):
+                        raise urllib.error.URLError("Network access blocked in packaged mode")
+
+                    def blocked_socket(*args, **kwargs):
+                        raise socket.error("Socket access blocked in packaged mode")
+
+                    # 屏蔽网络访问
+                    urllib.request.urlopen = blocked_network
+                    urllib.request.urlretrieve = blocked_network
+                    socket.socket = blocked_socket
+
                     try:
-                        # CPU模式下禁用pin_memory优化
+                        # 2. 设置完全离线的环境变量
+                        os.environ['EASYOCR_OFFLINE_MODE'] = 'true'
+                        os.environ['EASYOCR_DOWNLOAD_ENABLED'] = 'false'
+                        os.environ['TORCH_HOME'] = base_params.get('model_storage_directory', '')
+
+                        # 3. CPU模式下禁用各种优化以避免网络调用
                         if not use_gpu:
                             import warnings
-                            warnings.filterwarnings("ignore", message=".*pin_memory.*")
-                            
-                        # 使用完整参数初始化
-                        self.easyocr_reader = easyocr.Reader(**base_params)
-                        log_info("使用优化参数初始化EasyOCR成功（离线模式）")
+                            warnings.filterwarnings("ignore")
+                            os.environ['CUDA_VISIBLE_DEVICES'] = ''
+
+                        # 4. 获取实际的模型路径
+                        base_storage_dir = base_params.get('model_storage_directory')
+
+                        # 检查可能的模型目录
+                        possible_model_dirs = [
+                            Path(base_storage_dir) / "_internal" / "easyocr_models",
+                            Path(base_storage_dir) / "easyocr_models",
+                            Path(base_storage_dir).parent / "easyocr_models"
+                        ]
+
+                        actual_model_dir = None
+                        for model_dir in possible_model_dirs:
+                            if model_dir.exists():
+                                models = list(model_dir.glob("*.pth"))
+                                if models:
+                                    actual_model_dir = model_dir
+                                    log_info(f"找到模型目录: {actual_model_dir} (包含{len(models)}个模型文件)")
+                                    break
+
+                        if not actual_model_dir:
+                            raise Exception("无法找到包含模型文件的目录")
+
+                        # 5. 检查必要的模型文件
+                        craft_models = list(actual_model_dir.glob("craft_*.pth"))
+                        text_models = (list(actual_model_dir.glob("*_sim_*.pth")) + 
+                                     list(actual_model_dir.glob("*_g2.pth")) +
+                                     list(actual_model_dir.glob("chinese*.pth")))
+
+                        log_info(f"检查模型文件: craft模型={len(craft_models)}, 文本模型={len(text_models)}")
+
+                        if not craft_models:
+                            raise Exception("未找到必要的检测模型 (craft_*.pth)")
+                        if not text_models:
+                            raise Exception("未找到必要的识别模型")
+
+                        log_info("✅ 所有必要的离线模型文件都已找到")
+
+                        # 6. 配置完全离线的初始化参数
+                        # 使用模型目录的父目录作为存储目录，这样EasyOCR能找到.EasyOCR子目录
+                        offline_storage_dir = str(actual_model_dir.parent)
+
+                        offline_params = {
+                            'lang_list': ['ch_sim', 'en'],
+                            'gpu': False,  # 强制CPU模式确保稳定
+                            'verbose': False,  # 完全关闭verbose避免触发下载
+                            'model_storage_directory': offline_storage_dir,
+                            'download_enabled': False  # 如果支持的话
+                        }
+
+                        log_info(f"离线模式参数: {offline_params}")
+
+                        # 7. 创建EasyOCR期望的目录结构（如果不存在）
+                        easyocr_home = Path(offline_storage_dir) / ".EasyOCR"
+                        easyocr_model_subdir = easyocr_home / "model"
+                        easyocr_model_subdir.mkdir(parents=True, exist_ok=True)
+
+                        # 确保模型文件在EasyOCR期望的位置
+                        for model_file in actual_model_dir.glob("*.pth"):
+                            target_file = easyocr_model_subdir / model_file.name
+                            if not target_file.exists():
+                                try:
+                                    target_file.hardlink_to(model_file)
+                                except:
+                                    import shutil
+                                    shutil.copy2(model_file, target_file)
+
+                        log_info(f"EasyOCR模型结构准备完成: {easyocr_home}")
+
+                        # 8. 尝试离线初始化
+                        self.easyocr_reader = easyocr.Reader(**offline_params)
+                        log_info("✅ 打包环境EasyOCR初始化成功（完全离线模式）")
+
+                    except Exception as offline_error:
+                        log_error(f"离线模式初始化失败: {offline_error}")
+
+                        # 最后的回退：尝试最简单的初始化（仅使用语言列表）
+                        try:
+                            log_warning("尝试最简单的回退初始化...")
+                            # 只使用最基本的参数
+                            minimal_params = ['ch_sim', 'en']
+                            self.easyocr_reader = easyocr.Reader(minimal_params, gpu=False, verbose=False)
+                            log_info("✅ 打包环境EasyOCR最简回退初始化成功")
+                        except Exception as final_error:
+                            log_error(f"所有离线初始化方式都失败: {final_error}")
+                            log_error("请检查模型文件是否正确安装在_internal/easyocr_models目录中")
+                            self.easyocr_reader = None
                     finally:
-                        # 恢复网络访问（虽然在打包环境中可能不需要）
+                        # 恢复网络函数（避免影响其他组件）
                         urllib.request.urlopen = original_urlopen
+                        urllib.request.urlretrieve = original_urlretrieve
+                        socket.socket = original_socket_create
+
                 else:
                     # 开发环境正常初始化
                     self.easyocr_reader = easyocr.Reader(**base_params)
-                    log_info("使用优化参数初始化EasyOCR成功")
-                    
+                    log_info("开发环境EasyOCR初始化成功")
+
             except Exception as e:
-                # 回退到默认初始化
-                log_warning(f"使用优化参数失败({e})，尝试默认初始化")
-                try:
-                    # 在回退时也要考虑打包环境
-                    if getattr(sys, 'frozen', False):
-                        import urllib.request
-                        original_urlopen = urllib.request.urlopen
-                        urllib.request.urlopen = lambda *args, **kwargs: None
-                        try:
-                            self.easyocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=use_gpu, verbose=verbose)
-                        finally:
-                            urllib.request.urlopen = original_urlopen
-                    else:
-                        self.easyocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=use_gpu, verbose=verbose)
-                except Exception as fallback_error:
-                    log_error(f"所有EasyOCR初始化方式都失败: {fallback_error}")
-                    self.easyocr_reader = None
+                log_error(f"EasyOCR主要初始化流程失败: {e}")
+                # 不再进行回退尝试，直接设置为None
+                self.easyocr_reader = None
             
-            self.use_easyocr = True
-            log_info("EasyOCR初始化成功，将使用EasyOCR进行识别")
+            # 只有在真正初始化成功时才显示成功信息
+            if self.easyocr_reader is not None:
+                log_info("✅ EasyOCR初始化成功，引擎可用")
+            else:
+                log_error("❌ EasyOCR初始化失败，引擎不可用")
         except Exception as e:
             log_error(f"EasyOCR初始化失败: {e}")
             log_error(f"错误类型: {type(e).__name__}")
-        
-        # 如果EasyOCR不可用，使用PaddleOCR作为备选
-        if not self.use_easyocr:
-            try:
-                lang = config.get('language', 'ch')
-                use_gpu = config.get('use_gpu', False)
-                print(f"初始化PaddleOCR 3.2.0，语言: {lang}, GPU: {use_gpu}")
-                
-                # PaddleOCR 3.2.0针对中文优化的配置
-                self.ocr = PaddleOCR(
-                    use_angle_cls=False,     # 禁用角度分类，提高稳定性
-                    lang='ch',               # 强制使用中文
-                    use_gpu=use_gpu,         # 从配置读取GPU设置
-                    # 针对中文文本优化的参数
-                    det_limit_side_len=1280, # 增加检测边长限制
-                    det_limit_type='max',    
-                    # 降低检测阈值，提高敏感度
-                    det_db_thresh=0.2,       # 降低检测阈值
-                    det_db_box_thresh=0.3,   # 降低框检测阈值
-                    det_db_unclip_ratio=2.0, # 增加检测框扩展比例
-                )
-                print("PaddleOCR 3.2.0初始化成功")
-            except Exception as e:
-                print(f"PaddleOCR初始化失败: {e}")
-                self.ocr = None
-        else:
-            self.ocr = None
+            raise Exception(f"EasyOCR初始化失败，无法继续运行: {e}")
             
         self.field_mappings = config.get('field_mappings', {})
         self.use_absolute_value = config.get('use_absolute_value', True)
@@ -178,9 +246,9 @@ class OCRProcessor:
     def process_image(self, image: np.ndarray) -> Dict[str, str]:
         """处理图像并提取字段值"""
         try:
-            # 检查OCR引擎可用性
-            if not self.use_easyocr and self.ocr is None:
-                print("没有可用的OCR引擎")
+            # 检查EasyOCR引擎可用性
+            if self.easyocr_reader is None:
+                log_error("EasyOCR引擎不可用")
                 return {}
             
             # 针对中文字符优化的图像预处理
@@ -225,66 +293,24 @@ class OCRProcessor:
             
             print(f"最终处理图像尺寸: {processed_image.shape}")
             
-            # 使用EasyOCR或PaddleOCR进行识别
+            # 使用EasyOCR进行识别
             texts = []
-            
-            if self.use_easyocr:
-                # 使用EasyOCR识别
-                print("使用EasyOCR进行识别...")
-                try:
-                    results = self.easyocr_reader.readtext(image, detail=1)
-                    print(f"EasyOCR识别到 {len(results)} 个文本区域:")
-                    
-                    for idx, (bbox, text, prob) in enumerate(results):
-                        texts.append(text)
-                        print(f"  {idx+1}. '{text}' (置信度: {prob:.2f})")
-                    
-                    if not texts:
-                        print("EasyOCR未识别到任何文本")
-                        return {}
-                        
-                except Exception as e:
-                    print(f"EasyOCR识别失败: {e}")
+            log_info("使用EasyOCR进行识别...")
+            try:
+                results = self.easyocr_reader.readtext(image, detail=1)
+                log_info(f"EasyOCR识别到 {len(results)} 个文本区域:")
+                
+                for idx, (bbox, text, prob) in enumerate(results):
+                    texts.append(text)
+                    log_info(f"  {idx+1}. '{text}' (置信度: {prob:.2f})")
+                
+                if not texts:
+                    log_warning("EasyOCR未识别到任何文本")
                     return {}
-            else:
-                # 使用PaddleOCR识别
-                print("使用PaddleOCR进行识别...")
-                images_to_try = [
-                    ("原始图像", image),
-                    ("处理后图像", processed_image)
-                ]
-                
-                result = None
-                for img_name, img in images_to_try:
-                    print(f"尝试OCR识别: {img_name}")
-                    try:
-                        result = self.ocr.ocr(img)
-                        if result and result[0]:
-                            print(f"使用{img_name}识别成功")
-                            break
-                    except Exception as e:
-                        print(f"{img_name}识别失败: {e}")
-                        continue
-                
-                if not result or not result[0]:
-                    print("PaddleOCR未识别到任何文本")
-                    return {}
-                
-                # 提取文本
-                print("PaddleOCR识别结果:")
-                for i, line in enumerate(result[0]):
-                    if line and len(line) >= 2:
-                        # 检查数据结构
-                        if isinstance(line[1], (list, tuple)) and len(line[1]) >= 2:
-                            text = line[1][0]
-                            confidence = line[1][1]
-                            texts.append(text)
-                            print(f"  {i+1}: '{text}' (置信度: {confidence:.2f})")
-                        elif isinstance(line[1], str):
-                            # 如果直接是字符串
-                            text = line[1]
-                            texts.append(text)
-                            print(f"  {i+1}: '{text}'")
+                    
+            except Exception as e:
+                log_error(f"EasyOCR识别失败: {e}")
+                return {}
             
             # 根据字段映射提取值
             extracted_values = {}

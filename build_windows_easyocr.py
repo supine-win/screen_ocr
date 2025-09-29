@@ -11,10 +11,35 @@ import subprocess
 import shutil
 from pathlib import Path
 
+def check_easyocr_dependencies():
+    """检查EasyOCR依赖是否正确安装"""
+    try:
+        import easyocr
+        print(f"✅ EasyOCR version: {easyocr.__version__}")
+        
+        import torch
+        print(f"✅ PyTorch version: {torch.__version__}")
+        
+        import cv2
+        print(f"✅ OpenCV version: {cv2.__version__}")
+        
+        return True
+    except ImportError as e:
+        print(f"❌ Missing dependency: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Dependency check failed: {e}")
+        return False
+
 def build_windows_executable():
     """Build Windows executable with EasyOCR"""
     
-    print("Starting Windows executable build with EasyOCR...")
+    print("Starting Windows executable build with EasyOCR-only version...")
+    
+    # 检查EasyOCR依赖
+    if not check_easyocr_dependencies():
+        print("❌ EasyOCR dependencies not satisfied")
+        return False
     
     # Check if PyInstaller is installed
     try:
@@ -41,14 +66,8 @@ def build_windows_executable():
             shutil.copy2(model_file, local_easyocr_dir / model_file.name)
             print(f"Copied EasyOCR model: {model_file.name}")
     
-    # Copy PaddleOCR models as fallback (optional)
-    from model_manager import ModelManager
-    try:
-        model_manager = ModelManager()
-        model_manager.copy_models_for_packaging()
-        print("PaddleOCR models copied (fallback)")
-    except Exception as e:
-        print(f"PaddleOCR models not available (optional): {e}")
+    # EasyOCR-only version - PaddleOCR models removed
+    print("EasyOCR-only build - PaddleOCR models not included")
     
     # PyInstaller command parameters
     import platform
@@ -69,9 +88,7 @@ def build_windows_executable():
     if local_easyocr_dir.exists():
         cmd.append(f"--add-data=easyocr_models{separator}easyocr_models")
     
-    # Add PaddleOCR models if they exist (fallback)
-    if Path("paddlex_models").exists():
-        cmd.append(f"--add-data=paddlex_models{separator}paddlex_models")
+    # EasyOCR-only version - PaddleOCR models removed
     
     # Hidden imports for EasyOCR and optimization modules
     hidden_imports = [
@@ -107,10 +124,6 @@ def build_windows_executable():
         "shapely",
         "pyclipper",
         "ninja",
-        # PaddleOCR as fallback
-        "paddleocr",
-        "paddle",
-        "paddlex",
         # Common dependencies
         "cv2",
         "PIL",
@@ -122,16 +135,13 @@ def build_windows_executable():
     for import_name in hidden_imports:
         cmd.append(f"--hidden-import={import_name}")
     
-    # Collect all packages
+    # Collect all packages - EasyOCR only
     collect_packages = [
         "easyocr",
         "torch",
         "torchvision",
         "scipy",
         "skimage",
-        "paddleocr",
-        "paddle",
-        "paddlex",
     ]
     
     for package in collect_packages:
@@ -202,9 +212,10 @@ def build_windows_executable():
             # Create version info
             with open(release_dir / "version.txt", "w", encoding="utf-8") as f:
                 f.write("MonitorOCR with EasyOCR\n")
-                f.write("Version: 1.1.0\n")
-                f.write("OCR Engine: EasyOCR (Primary), PaddleOCR (Fallback)\n")
+                f.write("Version: 2.0.0\n")
+                f.write("OCR Engine: EasyOCR (Only)\n")
                 f.write("Supported Languages: Chinese (Simplified), English\n")
+                f.write("PaddleOCR/PaddleX: Removed (EasyOCR-only version)\n")
             
             print(f"✅ Release package created: {release_dir.absolute()}")
             

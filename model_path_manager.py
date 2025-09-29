@@ -19,26 +19,42 @@ class ModelPathManager:
         """获取EasyOCR模型路径"""
         # 检查打包环境
         if getattr(sys, 'frozen', False):
-            # 打包后的环境
-            base_path = Path(sys._MEIPASS)
-            packaged_model_dir = base_path / "easyocr_models"
-            
-            logger.info(f"Running in packaged environment, checking: {packaged_model_dir}")
-            
-            if packaged_model_dir.exists():
-                models = list(packaged_model_dir.glob("*.pth"))
-                logger.info(f"Found {len(models)} model files in packaged directory")
-                for model in models:
-                    logger.info(f"  - {model.name}: {model.stat().st_size / (1024*1024):.1f} MB")
-                return str(packaged_model_dir)
-            else:
-                logger.error(f"Packaged model directory not found: {packaged_model_dir}")
-                # 尝试相对路径
-                exe_dir = Path(sys.executable).parent
-                alt_model_dir = exe_dir / "easyocr_models"
-                if alt_model_dir.exists():
-                    logger.info(f"Found models in alternative path: {alt_model_dir}")
-                    return str(alt_model_dir)
+            # 打包后的环境 - 多个路径检查
+            search_paths = []
+
+            # 1. _internal目录中的模型（PyInstaller打包的资源）
+            if hasattr(sys, '_MEIPASS'):
+                base_path = Path(sys._MEIPASS)
+                search_paths.append(base_path / "easyocr_models")
+                search_paths.append(base_path / "_internal" / "easyocr_models")
+
+            # 2. exe同目录的模型
+            exe_dir = Path(sys.executable).parent
+            search_paths.append(exe_dir / "easyocr_models")
+            search_paths.append(exe_dir / "_internal" / "easyocr_models")
+
+            # 3. 当前工作目录
+            current_dir = Path.cwd()
+            search_paths.append(current_dir / "easyocr_models")
+
+            for model_dir in search_paths:
+                logger.info(f"Running in packaged environment, checking: {model_dir}")
+
+                if model_dir.exists():
+                    models = list(model_dir.glob("*.pth"))
+                    logger.info(f"Found {len(models)} model files in packaged directory")
+                    for model in models:
+                        logger.info(f"  - {model.name}: {model.stat().st_size / (1024*1024):.1f} MB")
+
+                    if models:  # 只有在找到模型文件时才返回
+                        return str(model_dir)
+                    else:
+                        logger.warning(f"Directory exists but no .pth files found: {model_dir}")
+                else:
+                    logger.debug(f"Directory not found: {model_dir}")
+
+            logger.error("No valid model directory found in packaged environment")
+            return None
         
         # 开发环境 - 使用默认EasyOCR路径
         home_dir = Path.home()
@@ -167,41 +183,50 @@ class ModelPathManager:
         model_path = ModelPathManager.get_easyocr_model_path()
         
         if not model_path:
-            return {'verbose': True}
-        
+            return {'verbose': False}
+
         # 对于打包环境，需要特殊处理
         if getattr(sys, 'frozen', False):
-            # 打包环境：直接指定模型存储目录
-            model_storage_dir = str(Path(model_path).parent)
-            
-            # 检查是否有必要的模型文件
+            # 打包环境：完全离线模式
             model_dir = Path(model_path)
+
+            # 直接使用模型目录的父目录作为存储目录
+            if model_dir.name == "easyocr_models":
+                # 如果是标准的easyocr_models目录
+                model_storage_dir = str(model_dir.parent)
+            else:
+                # 否则使用模型目录本身的父目录
+                model_storage_dir = str(model_dir.parent)
+
+            # 检查必要的模型文件
             detection_models = list(model_dir.glob("craft_*.pth"))
-            recognition_models = list(model_dir.glob("*_sim_*.pth"))
-            
+            recognition_models = (list(model_dir.glob("*_sim_*.pth")) + 
+                                list(model_dir.glob("*_g2.pth")) + 
+                                list(model_dir.glob("chinese*.pth")))
+
             logger.info(f"Detection models found: {len(detection_models)}")
             logger.info(f"Recognition models found: {len(recognition_models)}")
-            
+
+            # 设置强制离线环境变量
+            os.environ['EASYOCR_DOWNLOAD_ENABLED'] = 'false'
+            os.environ['EASYOCR_OFFLINE_MODE'] = 'true'
+            os.environ['TORCH_HOME'] = model_storage_dir
+            os.environ['CUDA_VISIBLE_DEVICES'] = ''  # 强制CPU模式
+
+            # 返回最小化参数配置
+            params = {
+                'model_storage_directory': model_storage_dir,
+                'verbose': False,  # 减少输出以避免触发下载逻辑
+            }
+
             if detection_models and recognition_models:
-                # 强制使用本地模型，完全禁用网络下载
-                params = {
-                    'model_storage_directory': model_storage_dir,
-                    'verbose': True
-                }
-                
-                # 设置额外的环境变量来禁用下载
-                os.environ['EASYOCR_DOWNLOAD_ENABLED'] = 'false'
-                os.environ['EASYOCR_OFFLINE_MODE'] = 'true'
-                
-                logger.info(f"Packaged mode: Using local models only from {model_storage_dir}")
-                return params
+                logger.info(f"Packaged mode: Complete offline setup with models from {model_storage_dir}")
             else:
-                logger.warning("Required model files not found in packaged directory")
-                # 即使没有找到模型，也要禁用下载尝试
-                os.environ['EASYOCR_DOWNLOAD_ENABLED'] = 'false'
-                return {'verbose': True}
-        
-        # 开发环境：让EasyOCR使用默认路径
+                logger.warning("Some model files may be missing, but continuing with offline mode")
+
+            return params
+
+        # 开发环境：正常模式
         return {'verbose': True}
     
     @staticmethod
