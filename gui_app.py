@@ -68,7 +68,7 @@ class MonitorOCRApp:
         self.http_status_label.pack(anchor="w")
         
         # 当前配置
-        config_text = f"端口: {self.config_manager.get('http.port', 8080)}"
+        config_text = f"端口: {self.config_manager.get('http.port', 9501)}"
         self.config_label = tk.Label(status_frame, text=config_text, font=("Arial", 12))
         self.config_label.pack(anchor="w")
         
@@ -153,7 +153,7 @@ class MonitorOCRApp:
         http_frame.pack(fill="x", padx=20, pady=5)
         
         tk.Label(http_frame, text="端口:").grid(row=0, column=0, sticky="w", padx=5, pady=2)
-        self.port_var = tk.StringVar(value=str(self.config_manager.get('http.port', 8080)))
+        self.port_var = tk.StringVar(value=str(self.config_manager.get('http.port', 9501)))
         tk.Entry(http_frame, textvariable=self.port_var, width=10).grid(row=0, column=1, padx=5, pady=2)
         
         # 存储设置
@@ -298,7 +298,7 @@ class MonitorOCRApp:
             config = self.config_manager.get_http_config()
             if self.http_server.start_server(
                 host=config.get('host', '0.0.0.0'),
-                port=config.get('port', 8080),
+                port=config.get('port', 9501),
                 debug=config.get('debug', False)
             ):
                 self.http_button.config(text="停止HTTP服务")
@@ -320,7 +320,7 @@ class MonitorOCRApp:
         
         if hasattr(self, 'http_status_label'):
             if self.http_server.is_running:
-                port = self.config_manager.get('http.port', 8080)
+                port = self.config_manager.get('http.port', 9501)
                 self.http_status_label.config(
                     text=f"HTTP服务: 运行中 (端口: {port})",
                     fg="green"

@@ -39,7 +39,7 @@ case $choice in
         ;;
     2)
         echo "启动API服务器模式..."
-        echo "服务器将在 http://localhost:8080 运行"
+        echo "服务器将在 http://localhost:9501 运行"
         echo "按 Ctrl+C 停止服务器"
         $EXE_PATH --no-gui
         ;;

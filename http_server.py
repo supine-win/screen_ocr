@@ -294,7 +294,7 @@ class HTTPServer:
         def internal_error(error):
             return jsonify({'error': '服务器内部错误'}), 500
     
-    def start_server(self, host: str = '0.0.0.0', port: int = 8080, debug: bool = False):
+    def start_server(self, host: str = '0.0.0.0', port: int = 9501, debug: bool = False):
         """启动HTTP服务器"""
         if self.is_running:
             return False

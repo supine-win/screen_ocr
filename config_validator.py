@@ -35,7 +35,6 @@ class ConfigValidator:
             },
             'language': {'type': str, 'default': 'ch', 'options': ['ch', 'en', 'ch_sim']},
             'use_angle_cls': {'type': bool, 'default': False},
-            'engine': {'type': str, 'default': 'easyocr', 'options': ['easyocr', 'paddleocr', 'auto']}
         },
         'storage': {
             'screenshot_dir': {'type': str, 'default': './screenshots'},
@@ -44,8 +43,9 @@ class ConfigValidator:
         },
         'http': {
             'host': {'type': str, 'default': '0.0.0.0'},
-            'port': {'type': int, 'default': 8080, 'min': 1024, 'max': 65535},
+            'port': {'type': int, 'default': 9501, 'min': 1024, 'max': 65535},
             'debug': {'type': bool, 'default': False},
+            'enabled': {'type': bool, 'default': True},
             'cors_enabled': {'type': bool, 'default': True}
         },
         'performance': {
@@ -55,7 +55,6 @@ class ConfigValidator:
             'cache_ttl': {'type': int, 'default': 300, 'min': 60}
         }
     }
-    
     @classmethod
     def validate_config(cls, config: Dict[str, Any]) -> tuple[bool, List[str]]:
         """验证配置"""

@@ -122,7 +122,7 @@ python main.py --config custom_config.json
   },
   "http": {
     "host": "0.0.0.0",         // 服务地址
-    "port": 8080,              // 服务端口
+    "port": 9501,              // 服务端口
     "debug": false             // 调试模式
   }
 }
@@ -284,17 +284,17 @@ monitor_ocr/
 **API调用示例**
 ```bash
 # 全屏截图OCR
-curl -X POST http://localhost:8080/screenshot/ocr \
+curl -X POST http://localhost:9501/screenshot/ocr \
   -H "Content-Type: application/json" \
   -d "{}"
 
 # 区域截图OCR
-curl -X POST http://localhost:8080/screenshot/ocr \
+curl -X POST http://localhost:9501/screenshot/ocr \
   -H "Content-Type: application/json" \
   -d '{"region": {"x": 100, "y": 100, "width": 800, "height": 600}}'
 
 # 获取屏幕信息
-curl http://localhost:8080/screenshot/info
+curl http://localhost:9501/screenshot/info
 ```
 
 ## 注意事项

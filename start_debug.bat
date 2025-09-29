@@ -23,20 +23,20 @@ echo 5. 查看日志
 echo 6. 退出
 echo.
 set /p choice="请选择 (1-6): "
-
 if "%choice%"=="1" (
     echo 正在运行调试检查...
     MonitorOCR_EasyOCR.exe -c "import debug_windows; debug_windows.main()"
 ) else if "%choice%"=="2" (
     echo 启动API服务器模式...
-    MonitorOCR_EasyOCR.exe --no-gui
+    echo 服务器将在 http://localhost:9501 运行
+    echo 按 Ctrl+C 停止服务器
 ) else if "%choice%"=="3" (
     echo 启动GUI模式...
     MonitorOCR_EasyOCR.exe
 ) else if "%choice%"=="4" (
     echo 运行调试模式...
     MonitorOCR_EasyOCR.exe --debug
-) else if "%choice%"=="5" (
+{{ ... }}
     echo 查看最新日志文件...
     if exist "logs\" (
         for /f %%i in ('dir logs\*.log /b /o:d') do set latest=%%i

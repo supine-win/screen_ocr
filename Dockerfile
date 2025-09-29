@@ -28,7 +28,7 @@ COPY . .
 RUN mkdir -p screenshots
 
 # 暴露端口
-EXPOSE 8080
+EXPOSE 9501
 
 # 设置环境变量
 ENV PYTHONPATH=/app

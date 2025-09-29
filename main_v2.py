@@ -118,7 +118,7 @@ class MonitorOCRV2:
                 
                 # 启动HTTP服务器
                 host = self.config.get('http', {}).get('host', '0.0.0.0')
-                port = self.config.get('http', {}).get('port', 8080)
+                port = self.config.get('http', {}).get('port', 9501)
                 debug = self.config.get('http', {}).get('debug', False)
                 
                 self.http_server.start_server(host, port, debug)
