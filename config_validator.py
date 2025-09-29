@@ -17,13 +17,12 @@ class ConfigValidator:
     # 配置模板和默认值
     CONFIG_SCHEMA = {
         'camera': {
-            'selected_index': {'type': int, 'default': 1, 'min': 0, 'max': 10},
             'resolution': {'type': list, 'default': [1920, 1080], 'length': 2},
             'fps': {'type': int, 'default': 30, 'min': 1, 'max': 120}
         },
         'ocr': {
             'field_mappings': {
-                'type': dict,
+                'type': dict, 
                 'default': {
                     '平均速度 (rpm)': 'avg_speed',
                     '最高速度 (rpm)': 'max_speed',
@@ -35,6 +34,7 @@ class ConfigValidator:
             },
             'language': {'type': str, 'default': 'ch', 'options': ['ch', 'en', 'ch_sim']},
             'use_angle_cls': {'type': bool, 'default': False},
+            'use_absolute_value': {'type': bool, 'default': True}  # 是否取绝对值
         },
         'storage': {
             'screenshot_dir': {'type': str, 'default': './screenshots'},

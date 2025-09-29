@@ -17,7 +17,8 @@
       "位置波动 (min)": "position_deviation_min"
     },
     "language": "ch",
-    "use_angle_cls": true
+    "use_angle_cls": true,
+    "use_absolute_value": true
   },
   "storage": {
     "screenshot_dir": "./screenshots",

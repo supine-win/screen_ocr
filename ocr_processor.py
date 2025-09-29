@@ -76,6 +76,7 @@ class OCRProcessor:
             self.ocr = None
             
         self.field_mappings = config.get('field_mappings', {})
+        self.use_absolute_value = config.get('use_absolute_value', True)
     
     def process_image(self, image: np.ndarray) -> Dict[str, str]:
         """处理图像并提取字段值"""
@@ -196,10 +197,14 @@ class OCRProcessor:
                 print(f"查找字段: '{field_name}'")
                 value = self._extract_field_value(texts, field_name)
                 if value:
-                    extracted_values[mapped_key] = value
-                    print(f"  找到: {mapped_key} = {value}")
+                    # 处理数值（绝对值等）
+                    processed_value = self._process_numeric_value(value)
+                    extracted_values[mapped_key] = processed_value
+                    print(f"  找到: {mapped_key} = {processed_value}")
                 else:
-                    print(f"  未找到字段 '{field_name}'")
+                    # 为未找到的字段设置None值，确保在结果中显示
+                    extracted_values[mapped_key] = None
+                    print(f"  未找到字段 '{field_name}' -> {mapped_key} = None")
             
             print(f"最终结果: {extracted_values}")
             return extracted_values
@@ -214,14 +219,7 @@ class OCRProcessor:
         """从文本列表中提取指定字段的值"""
         log_info(f"  查找字段 '{field_name}' 在文本中...")
         
-        # 方法1：精确匹配整行文本中的字段和数值
-        full_text = " ".join(texts).replace(" ", "")  # 移除空格便于匹配
-        result = self._extract_value_from_text(full_text, field_name)
-        if result:
-            log_info(f"  通过精确匹配找到数值: {result}")
-            return result
-        
-        # 方法2：分析每个文本片段
+        # 方法1：逐个分析文本片段
         for i, text in enumerate(texts):
             log_info(f"  分析文本片段 {i+1}: '{text}'")
             result = self._extract_value_from_text(text, field_name)
@@ -229,8 +227,18 @@ class OCRProcessor:
                 log_info(f"  在文本片段 {i+1} 找到数值: {result}")
                 return result
         
-        # 方法3：使用预定义模式匹配
+        # 方法2：跨片段组合匹配（处理OCR拆分字段的情况）
+        result = self._extract_cross_fragment(texts, field_name)
+        if result:
+            return result
+        
+        # 方法3：使用模式匹配全文
         result = self._extract_with_patterns(texts, field_name)
+        if result:
+            return result
+        
+        # 方法4：后备方案
+        result = self._fallback_extraction(texts, field_name)
         if result:
             return result
         
@@ -265,27 +273,111 @@ class OCRProcessor:
         
         escaped_base = re.escape(base_field)
         
-        # 1. 精确匹配完整字段名
-        patterns.append(rf'{escaped_field}[：:\s]*(\d+\.?\d*)')
+        # 1. 精确匹配完整字段名（支持负数）
+        patterns.append(rf'{escaped_field}[：:\s]*(-?\d+\.?\d*)')
         
-        # 2. 处理中英文括号差异
+        # 2. 处理中英文括号差异（支持负数）
         normalized_field = field_name.replace("(", "[（(]").replace(")", "[）)]")
         normalized_field = re.escape(normalized_field).replace(r'\[（\(]', '[（(]').replace(r'\[）\)]', '[）)]')
-        patterns.append(rf'{normalized_field}[：:\s]*(\d+\.?\d*)')
+        patterns.append(rf'{normalized_field}[：:\s]*(-?\d+\.?\d*)')
         
-        # 3. 基础字段名匹配（去掉括号部分）
-        if base_field != field_name:
-            patterns.append(rf'{escaped_base}[：:\s]*(\d+\.?\d*)')
+        # 3. 基础字段名匹配（去掉括号部分）- 仅当没有max/min区分时使用（支持负数）
+        if base_field != field_name and not any(keyword in field_name for keyword in ["max", "min", "最大", "最小"]):
+            patterns.append(rf'{escaped_base}[：:\s]*(-?\d+\.?\d*)')
         
-        # 4. 特殊处理：如果字段包含特定关键词，生成更宽泛的模式
+        # 4. 特殊处理：如果字段包含特定关键词，生成更宽泛的模式（支持负数）
         if any(keyword in field_name for keyword in ["max", "min", "最大", "最小"]):
             # 提取关键词
             if "(max)" in field_name or "（max）" in field_name:
-                patterns.append(rf'{escaped_base}.*?max.*?[：:\s]*(\d+\.?\d*)')
+                patterns.append(rf'{escaped_base}.*?max.*?[：:\s]*(-?\d+\.?\d*)')
             elif "(min)" in field_name or "（min）" in field_name:
-                patterns.append(rf'{escaped_base}.*?min.*?[：:\s]*(\d+\.?\d*)')
+                patterns.append(rf'{escaped_base}.*?min.*?[：:\s]*(-?\d+\.?\d*)')
         
         return patterns
+    
+    def _process_numeric_value(self, value: str) -> str:
+        """处理数值：根据配置决定是否取绝对值"""
+        if not value:
+            return value
+            
+        try:
+            # 提取完整的数字（包括负号）
+            import re
+            match = re.search(r'(-?\d+\.?\d*)', value)
+            if match:
+                number_str = match.group(1)
+                if self.use_absolute_value:
+                    # 取绝对值
+                    abs_value = str(abs(float(number_str)))
+                    log_info(f"  数值处理：{number_str} -> {abs_value} (取绝对值)")
+                    return abs_value
+                else:
+                    # 保留原始值（包括负号）
+                    log_info(f"  数值处理：保留原始值 {number_str}")
+                    return number_str
+            return value
+        except Exception as e:
+            log_warning(f"  数值处理出错: {e}, 返回原始值: {value}")
+            return value
+    
+    def _extract_cross_fragment(self, texts: List[str], field_name: str) -> Optional[str]:
+        """跨片段匹配：处理OCR将字段拆分成多个片段的情况"""
+        
+        # 提取字段关键信息
+        base_field = field_name
+        field_suffix = ""
+        
+        for suffix in [" (max)", " (min)", "（max）", "（min）"]:
+            if suffix in field_name:
+                field_suffix = suffix.replace(" ", "").replace("（", "").replace("）", "").replace("(", "").replace(")", "")
+                base_field = base_field.replace(suffix, "")
+                break
+        
+        log_info(f"  跨片段匹配：查找 '{base_field}' + '{field_suffix}'")
+        
+        # 查找包含基础字段的片段位置
+        base_indices = []
+        for i, text in enumerate(texts):
+            if base_field in text:
+                base_indices.append(i)
+        
+        if not base_indices:
+            return None
+        
+        # 对于每个基础字段位置，查找附近的后缀和数值
+        for base_idx in base_indices:
+            log_info(f"  找到基础字段 '{base_field}' 在片段 {base_idx+1}: '{texts[base_idx]}'")
+            
+            # 查找后缀在附近片段中的位置
+            for offset in range(-2, 3):  # 前后2个片段范围内查找
+                suffix_idx = base_idx + offset
+                if 0 <= suffix_idx < len(texts):
+                    text = texts[suffix_idx]
+                    
+                    # 检查是否包含目标后缀
+                    if field_suffix:
+                        # 对于max/min字段，需要精确匹配后缀
+                        if any(pattern in text.lower() for pattern in [field_suffix, f"({field_suffix})", f"（{field_suffix}）"]):
+                            log_info(f"  找到后缀 '{field_suffix}' 在片段 {suffix_idx+1}: '{text}'")
+                            
+                            # 在后缀片段和其后续片段中查找数字（支持负数）
+                            for num_offset in range(0, 3):
+                                num_idx = suffix_idx + num_offset
+                                if 0 <= num_idx < len(texts):
+                                    numbers = re.findall(r'(-?\d+\.?\d*)', texts[num_idx])
+                                    if numbers:
+                                        raw_value = numbers[0]
+                                        log_info(f"  跨片段匹配成功：在片段 {num_idx+1} '{texts[num_idx]}' 找到数值: {raw_value}")
+                                        return raw_value
+                    else:
+                        # 对于普通字段，直接在后续片段查找数字（支持负数）
+                        numbers = re.findall(r'(-?\d+\.?\d*)', text)
+                        if numbers:
+                            raw_value = numbers[0]
+                            log_info(f"  跨片段匹配成功：在片段 {suffix_idx+1} '{text}' 找到数值: {raw_value}")
+                            return raw_value
+        
+        return None
     
     def _extract_with_patterns(self, texts: List[str], field_name: str) -> Optional[str]:
         """使用基于配置的模式匹配"""
@@ -305,27 +397,103 @@ class OCRProcessor:
         return self._fallback_extraction(texts, field_name)
     
     def _fallback_extraction(self, texts: List[str], field_name: str) -> Optional[str]:
-        """后备提取方法：简单的邻近搜索"""
+        """后备提取方法：智能容错的邻近搜索"""
         
-        # 查找包含字段名的文本位置
+        # 提取字段的关键信息
         base_field = field_name
+        field_suffix = ""
+        
+        # 保留关键的区分信息
+        for suffix in [" (max)", " (min)", "（max）", "（min）"]:
+            if suffix in field_name:
+                field_suffix = suffix.replace(" ", "").replace("（", "").replace("）", "").replace("(", "").replace(")", "")
+                break
+        
+        # 清理基础字段名
         for suffix in [" (rpm)", " (max)", " (min)", "（rpm）", "（max）", "（min）"]:
             base_field = base_field.replace(suffix, "")
         
+        log_info(f"  后备方案：查找基础字段='{base_field}', 后缀='{field_suffix}'")
+        
+        # 策略1：处理中文识别失败（识别为问号的情况）
+        chinese_failed_texts = []
         for i, text in enumerate(texts):
-            if base_field in text:
-                # 在同一个文本中查找数字
-                numbers = re.findall(r'(\d+\.?\d*)', text)
-                if numbers:
-                    log_info(f"  后备方案：在文本 '{text}' 中找到数值: {numbers[0]}")
-                    return numbers[0]
-                
-                # 在后续文本中查找数字
-                for j in range(i + 1, min(i + 3, len(texts))):
-                    numbers = re.findall(r'(\d+\.?\d*)', texts[j])
+            if '?' in text and any(keyword in text.lower() for keyword in ['max', 'min', 'mi', 'rpm']):
+                chinese_failed_texts.append((i, text))
+                log_info(f"  检测到中文识别失败: 片段{i+1} '{text}'")
+        
+        if chinese_failed_texts and field_suffix in ["max", "min"]:
+            # 基于英文关键字匹配
+            for i, text in chinese_failed_texts:
+                if field_suffix == "max" and "max" in text.lower():
+                    numbers = re.findall(r'(\d+\.?\d*)', text)
                     if numbers:
-                        log_info(f"  后备方案：在后续文本 '{texts[j]}' 中找到数值: {numbers[0]}")
+                        log_info(f"  中文识别失败修复：max字段 -> {numbers[0]}")
                         return numbers[0]
+                elif field_suffix == "min" and ("min" in text.lower() or "mi" in text.lower()):
+                    numbers = re.findall(r'(\d+\.?\d*)', text)
+                    if numbers:
+                        log_info(f"  中文识别失败修复：min字段 -> {numbers[0]}")
+                        return numbers[0]
+        
+        # 对于max/min字段，使用智能匹配策略
+        if field_suffix in ["max", "min"]:
+            # 策略2：精确匹配
+            for i, text in enumerate(texts):
+                if base_field in text and field_suffix in text.lower():
+                    numbers = re.findall(r'(\d+\.?\d*)', text)
+                    if numbers:
+                        log_info(f"  后备方案：精确匹配 '{text}' 中找到数值: {numbers[0]}")
+                        return numbers[0]
+            
+            # 策略2：模糊匹配（处理OCR识别错误）
+            similar_patterns = {
+                "max": ["max", "nax", "mux", "mac"],
+                "min": ["min", "mix", "nin", "mir", "mic"]
+            }
+            
+            if field_suffix in similar_patterns:
+                for i, text in enumerate(texts):
+                    if base_field in text:
+                        text_lower = text.lower()
+                        for pattern in similar_patterns[field_suffix]:
+                            if pattern in text_lower:
+                                numbers = re.findall(r'(\d+\.?\d*)', text)
+                                if numbers:
+                                    log_info(f"  后备方案：模糊匹配 '{text}' (模式: {pattern}) 中找到数值: {numbers[0]}")
+                                    return numbers[0]
+            
+            # 策略3：位置推断（基于顺序）
+            base_texts = [text for text in texts if base_field in text]
+            if len(base_texts) >= 2:
+                if field_suffix == "max":
+                    # 第一个通常是max
+                    numbers = re.findall(r'(\d+\.?\d*)', base_texts[0])
+                    if numbers:
+                        log_info(f"  后备方案：位置推断(第1个) '{base_texts[0]}' 作为max: {numbers[0]}")
+                        return numbers[0]
+                elif field_suffix == "min":
+                    # 第二个通常是min
+                    numbers = re.findall(r'(\d+\.?\d*)', base_texts[1])
+                    if numbers:
+                        log_info(f"  后备方案：位置推断(第2个) '{base_texts[1]}' 作为min: {numbers[0]}")
+                        return numbers[0]
+        else:
+            # 普通字段的邻近搜索
+            for i, text in enumerate(texts):
+                if base_field in text:
+                    # 在同一个文本中查找数字
+                    numbers = re.findall(r'(\d+\.?\d*)', text)
+                    if numbers:
+                        log_info(f"  后备方案：在文本 '{text}' 中找到数值: {numbers[0]}")
+                        return numbers[0]
+                    
+                    # 在后续文本中查找数字
+                    for j in range(i + 1, min(i + 3, len(texts))):
+                        numbers = re.findall(r'(\d+\.?\d*)', texts[j])
+                        if numbers:
+                            log_info(f"  后备方案：在后续文本 '{texts[j]}' 中找到数值: {numbers[0]}")
+                            return numbers[0]
         
         return None
     
