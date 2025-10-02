@@ -37,9 +37,6 @@ class MonitorOCRApp:
         self.video_label = None
         self.is_preview_running = False
         
-        # 截图区域设置
-        self.screenshot_region = None  # None表示全屏，否则为{'x': x, 'y': y, 'width': w, 'height': h}
-        
         # 创建主界面
         self.create_main_screen()
         
@@ -379,21 +376,23 @@ class MonitorOCRApp:
     def screenshot_ocr(self):
         """执行屏幕截图OCR"""
         try:
+            # 从配置中获取截图区域
+            screenshot_region = self.config_manager.get_screenshot_region()
             # 显示处理中提示
-            region_text = "区域截图" if self.screenshot_region else "全屏截图"
+            region_text = "区域截图" if screenshot_region else "全屏截图"
             self.show_processing_message(f"正在进行{region_text}OCR...")
-            
+
             # 在后台线程中执行截图OCR
             def do_screenshot_ocr():
                 try:
                     # 根据设置选择截图方式
-                    if self.screenshot_region:
+                    if screenshot_region:
                         # 区域截图
                         screenshot = self.screenshot_manager.capture_region(
-                            self.screenshot_region['x'],
-                            self.screenshot_region['y'],
-                            self.screenshot_region['width'],
-                            self.screenshot_region['height']
+                            screenshot_region['x'],
+                            screenshot_region['y'],
+                            screenshot_region['width'],
+                            screenshot_region['height']
                         )
                     else:
                         # 全屏截图
@@ -556,15 +555,18 @@ class MonitorOCRApp:
         settings_window.geometry("350x200")
         settings_window.transient(self.root)
         settings_window.grab_set()
-        
+
         # 标题
         title_label = tk.Label(settings_window, text="选择截图模式", font=("Arial", 16, "bold"))
         title_label.pack(pady=20)
-        
+
+        # 从配置获取当前设置
+        screenshot_region = self.config_manager.get_screenshot_region()
+
         # 当前设置显示
-        if self.screenshot_region:
-            current_text = f"当前: 区域截图 ({self.screenshot_region['x']}, {self.screenshot_region['y']}) " \
-                          f"{self.screenshot_region['width']} x {self.screenshot_region['height']}"
+        if screenshot_region:
+            current_text = f"当前: 区域截图 ({screenshot_region['x']}, {screenshot_region['y']}) " \
+                          f"{screenshot_region['width']} x {screenshot_region['height']}"
         else:
             current_text = "当前: 全屏截图"
         
@@ -577,7 +579,8 @@ class MonitorOCRApp:
         
         def set_fullscreen():
             """设置全屏截图"""
-            self.screenshot_region = None
+            self.config_manager.set_screenshot_region(None)
+            self.http_server.screenshot_region = None
             messagebox.showinfo("成功", "已设置为全屏截图")
             settings_window.destroy()
         
@@ -654,14 +657,16 @@ class MonitorOCRApp:
                 width, height = x2 - x1, y2 - y1
                 
                 if width > 10 and height > 10:  # 最小尺寸检查
-                    # 保存区域设置
-                    self.screenshot_region = {
+                    # 保存区域设置到配置
+                    region = {
                         'x': x1,
                         'y': y1,
                         'width': width,
                         'height': height
                     }
-                    
+                    self.config_manager.set_screenshot_region(region)
+                    self.http_server.screenshot_region = region
+
                     selector.destroy()
                     messagebox.showinfo("成功", f"已设置区域截图: ({x1}, {y1}) {width} x {height}")
                 else:
@@ -680,12 +685,14 @@ class MonitorOCRApp:
                         width, height = abs(x2 - x1), abs(y2 - y1)
                         
                         if width > 10 and height > 10:
-                            self.screenshot_region = {
+                            region = {
                                 'x': int(x1),
                                 'y': int(y1),
                                 'width': int(width),
                                 'height': int(height)
                             }
+                            self.config_manager.set_screenshot_region(region)
+                            self.http_server.screenshot_region = region
                             selector.destroy()
                             messagebox.showinfo("成功", f"已设置区域截图: ({int(x1)}, {int(y1)}) {int(width)} x {int(height)}")
         

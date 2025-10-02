@@ -9,12 +9,29 @@
   },
   "ocr": {
     "field_mappings": {
-      "平均速度 (rpm)": "avg_speed",
-      "最高速度 (rpm)": "max_speed",
-      "最低速度 (rpm)": "min_speed",
-      "速度偏差 (rpm)": "speed_deviation",
-      "位置波动 (max)": "position_deviation_max",
-      "位置波动 (min)": "position_deviation_min"
+      "平均速度 (rpm)": [
+        "avg_speed"
+      ],
+      "最高速度 (rpm)": [
+        "max_speed"
+      ],
+      "最低速度 (rpm)": [
+        "min_speed"
+      ],
+      "速度偏差 (rpm)": [
+        "speed_deviation"
+      ],
+      "位置波动 (max)": [
+        "position_deviation_max"
+      ],
+      "位置波动 (min)": [
+        "position_deviation1_min",
+        "position_deviation2_min"
+      ],
+      "速度 (rpm)": [
+        "current_speed",
+        "real_time_speed"
+      ]
     },
     "language": "ch",
     "use_angle_cls": true,
@@ -32,7 +49,15 @@
   },
   "http": {
     "host": "0.0.0.0",
-    "port": 9501,
+    "port": 19005,
     "debug": false
+  },
+  "screenshot": {
+    "region": {
+      "x": 1223,
+      "y": 357,
+      "width": 646,
+      "height": 435
+    }
   }
 }
