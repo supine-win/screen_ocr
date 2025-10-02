@@ -4,7 +4,7 @@ services:
   monitor-ocr:
     build: .
     ports:
-      - "9501:9501"
+      - "19005:19005"
     volumes:
       - ./screenshots:/app/screenshots
       - ./config.json:/app/config.json

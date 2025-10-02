@@ -37,9 +37,6 @@ class MonitorOCRApp:
         self.video_label = None
         self.is_preview_running = False
         
-        # 截图区域设置
-        self.screenshot_region = None  # None表示全屏，否则为{'x': x, 'y': y, 'width': w, 'height': h}
-        
         # 创建主界面
         self.create_main_screen()
         
@@ -172,9 +169,9 @@ class MonitorOCRApp:
         # 映射列表
         self.mapping_tree = ttk.Treeview(mapping_frame, columns=("field", "key"), show="headings", height=6)
         self.mapping_tree.heading("field", text="字段名")
-        self.mapping_tree.heading("key", text="映射键")
+        self.mapping_tree.heading("key", text="映射键 (多个用逗号分隔)")
         self.mapping_tree.column("field", width=150)
-        self.mapping_tree.column("key", width=150)
+        self.mapping_tree.column("key", width=200)
         self.mapping_tree.pack(fill="x", pady=5)
         
         # 映射操作按钮
@@ -182,6 +179,7 @@ class MonitorOCRApp:
         mapping_btn_frame.pack(fill="x", pady=5)
         
         ttk.Button(mapping_btn_frame, text="添加", command=self.add_mapping).pack(side="left", padx=5)
+        ttk.Button(mapping_btn_frame, text="编辑", command=self.edit_mapping).pack(side="left", padx=5)
         ttk.Button(mapping_btn_frame, text="删除", command=self.delete_mapping).pack(side="left", padx=5)
         
         # 加载映射数据
@@ -238,17 +236,70 @@ class MonitorOCRApp:
                 self.mapping_tree.delete(item)
             
             mappings = self.config_manager.get_field_mappings()
-            for field, key in mappings.items():
-                self.mapping_tree.insert("", "end", values=(field, key))
+            for field, keys in mappings.items():
+                # 支持一对多映射：如果是列表，显示为逗号分隔的字符串
+                if isinstance(keys, list):
+                    key_display = ", ".join(keys)
+                else:
+                    key_display = str(keys)
+                self.mapping_tree.insert("", "end", values=(field, key_display))
     
     def add_mapping(self):
         """添加字段映射"""
         dialog = MappingDialog(self.root)
         if dialog.result:
-            field, key = dialog.result
+            field, keys_input = dialog.result
             mappings = self.config_manager.get_field_mappings()
-            mappings[field] = key
+            
+            # 检查是否存在重复的字段名
+            if field in mappings:
+                if not messagebox.askyesno("字段已存在", 
+                                         f"字段 '{field}' 已存在，是否要覆盖现有映射？"):
+                    return
+            
+            # 处理多个key：如果包含逗号，则分割为列表
+            if ',' in keys_input:
+                keys = [key.strip() for key in keys_input.split(',') if key.strip()]
+                mappings[field] = keys
+            else:
+                # 单个key，仍保存为列表以保持一致性
+                mappings[field] = [keys_input.strip()]
+            
             self.config_manager.set_field_mappings(mappings)
+            self.ocr_processor.update_field_mappings(mappings)  # 同步到OCR处理器
+            self.load_mappings()
+    
+    def edit_mapping(self):
+        """编辑字段映射"""
+        selection = self.mapping_tree.selection()
+        if not selection:
+            messagebox.showwarning("警告", "请选择要编辑的映射")
+            return
+        
+        item = self.mapping_tree.item(selection[0])
+        field = item['values'][0]
+        current_keys = item['values'][1]
+        
+        # 创建编辑对话框，预填充当前值
+        dialog = MappingDialog(self.root, field, current_keys)
+        if dialog.result:
+            new_field, new_keys_input = dialog.result
+            mappings = self.config_manager.get_field_mappings()
+            
+            # 安全删除旧映射（无论字段名是否改变）
+            # 这样确保不会有重复的key，即使字段名没变也先删除再添加
+            if field in mappings:
+                del mappings[field]
+            
+            # 处理新的映射
+            if ',' in new_keys_input:
+                keys = [key.strip() for key in new_keys_input.split(',') if key.strip()]
+                mappings[new_field] = keys
+            else:
+                mappings[new_field] = [new_keys_input.strip()]
+            
+            self.config_manager.set_field_mappings(mappings)
+            self.ocr_processor.update_field_mappings(mappings)  # 同步到OCR处理器
             self.load_mappings()
     
     def delete_mapping(self):
@@ -261,11 +312,14 @@ class MonitorOCRApp:
         item = self.mapping_tree.item(selection[0])
         field = item['values'][0]
         
-        mappings = self.config_manager.get_field_mappings()
-        if field in mappings:
-            del mappings[field]
-            self.config_manager.set_field_mappings(mappings)
-            self.load_mappings()
+        # 确认删除
+        if messagebox.askyesno("确认删除", f"确定要删除字段 '{field}' 的映射吗？"):
+            mappings = self.config_manager.get_field_mappings()
+            if field in mappings:
+                del mappings[field]
+                self.config_manager.set_field_mappings(mappings)
+                self.ocr_processor.update_field_mappings(mappings)  # 同步到OCR处理器
+                self.load_mappings()
     
     def browse_storage_dir(self):
         """浏览存储目录"""
@@ -379,21 +433,23 @@ class MonitorOCRApp:
     def screenshot_ocr(self):
         """执行屏幕截图OCR"""
         try:
+            # 从配置中获取截图区域
+            screenshot_region = self.config_manager.get_screenshot_region()
             # 显示处理中提示
-            region_text = "区域截图" if self.screenshot_region else "全屏截图"
+            region_text = "区域截图" if screenshot_region else "全屏截图"
             self.show_processing_message(f"正在进行{region_text}OCR...")
-            
+
             # 在后台线程中执行截图OCR
             def do_screenshot_ocr():
                 try:
                     # 根据设置选择截图方式
-                    if self.screenshot_region:
+                    if screenshot_region:
                         # 区域截图
                         screenshot = self.screenshot_manager.capture_region(
-                            self.screenshot_region['x'],
-                            self.screenshot_region['y'],
-                            self.screenshot_region['width'],
-                            self.screenshot_region['height']
+                            screenshot_region['x'],
+                            screenshot_region['y'],
+                            screenshot_region['width'],
+                            screenshot_region['height']
                         )
                     else:
                         # 全屏截图
@@ -556,15 +612,18 @@ class MonitorOCRApp:
         settings_window.geometry("350x200")
         settings_window.transient(self.root)
         settings_window.grab_set()
-        
+
         # 标题
         title_label = tk.Label(settings_window, text="选择截图模式", font=("Arial", 16, "bold"))
         title_label.pack(pady=20)
-        
+
+        # 从配置获取当前设置
+        screenshot_region = self.config_manager.get_screenshot_region()
+
         # 当前设置显示
-        if self.screenshot_region:
-            current_text = f"当前: 区域截图 ({self.screenshot_region['x']}, {self.screenshot_region['y']}) " \
-                          f"{self.screenshot_region['width']} x {self.screenshot_region['height']}"
+        if screenshot_region:
+            current_text = f"当前: 区域截图 ({screenshot_region['x']}, {screenshot_region['y']}) " \
+                          f"{screenshot_region['width']} x {screenshot_region['height']}"
         else:
             current_text = "当前: 全屏截图"
         
@@ -577,7 +636,8 @@ class MonitorOCRApp:
         
         def set_fullscreen():
             """设置全屏截图"""
-            self.screenshot_region = None
+            self.config_manager.set_screenshot_region(None)
+            self.http_server.screenshot_region = None
             messagebox.showinfo("成功", "已设置为全屏截图")
             settings_window.destroy()
         
@@ -654,14 +714,16 @@ class MonitorOCRApp:
                 width, height = x2 - x1, y2 - y1
                 
                 if width > 10 and height > 10:  # 最小尺寸检查
-                    # 保存区域设置
-                    self.screenshot_region = {
+                    # 保存区域设置到配置
+                    region = {
                         'x': x1,
                         'y': y1,
                         'width': width,
                         'height': height
                     }
-                    
+                    self.config_manager.set_screenshot_region(region)
+                    self.http_server.screenshot_region = region
+
                     selector.destroy()
                     messagebox.showinfo("成功", f"已设置区域截图: ({x1}, {y1}) {width} x {height}")
                 else:
@@ -680,12 +742,14 @@ class MonitorOCRApp:
                         width, height = abs(x2 - x1), abs(y2 - y1)
                         
                         if width > 10 and height > 10:
-                            self.screenshot_region = {
+                            region = {
                                 'x': int(x1),
                                 'y': int(y1),
                                 'width': int(width),
                                 'height': int(height)
                             }
+                            self.config_manager.set_screenshot_region(region)
+                            self.http_server.screenshot_region = region
                             selector.destroy()
                             messagebox.showinfo("成功", f"已设置区域截图: ({int(x1)}, {int(y1)}) {int(width)} x {int(height)}")
         
@@ -705,28 +769,34 @@ class MonitorOCRApp:
 
 
 class MappingDialog:
-    def __init__(self, parent):
+    def __init__(self, parent, field_name="", key_values=""):
         self.result = None
         
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title("添加字段映射")
-        self.dialog.geometry("300x150")
+        title = "编辑字段映射" if field_name else "添加字段映射"
+        self.dialog.title(title)
+        self.dialog.geometry("400x200")
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
         # 字段名
         tk.Label(self.dialog, text="字段名:").grid(row=0, column=0, padx=10, pady=10, sticky="w")
-        self.field_var = tk.StringVar()
-        tk.Entry(self.dialog, textvariable=self.field_var, width=20).grid(row=0, column=1, padx=10, pady=10)
+        self.field_var = tk.StringVar(value=field_name)
+        tk.Entry(self.dialog, textvariable=self.field_var, width=30).grid(row=0, column=1, padx=10, pady=10)
         
-        # 映射键
-        tk.Label(self.dialog, text="映射键:").grid(row=1, column=0, padx=10, pady=10, sticky="w")
-        self.key_var = tk.StringVar()
-        tk.Entry(self.dialog, textvariable=self.key_var, width=20).grid(row=1, column=1, padx=10, pady=10)
+        # 映射键（支持多个）
+        tk.Label(self.dialog, text="映射键:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.key_var = tk.StringVar(value=key_values)
+        tk.Entry(self.dialog, textvariable=self.key_var, width=30).grid(row=1, column=1, padx=10, pady=5)
+        
+        # 帮助说明
+        help_text = "多个映射键请用逗号分隔\n例如: key1, key2, key3"
+        tk.Label(self.dialog, text=help_text, font=("Arial", 9), fg="gray").grid(
+            row=2, column=0, columnspan=2, padx=10, pady=5)
         
         # 按钮
         button_frame = tk.Frame(self.dialog)
-        button_frame.grid(row=2, column=0, columnspan=2, pady=20)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=20)
         
         ttk.Button(button_frame, text="确定", command=self.ok_clicked).pack(side="left", padx=5)
         ttk.Button(button_frame, text="取消", command=self.cancel_clicked).pack(side="left", padx=5)
@@ -741,13 +811,20 @@ class MappingDialog:
     
     def ok_clicked(self):
         field = self.field_var.get().strip()
-        key = self.key_var.get().strip()
+        keys_input = self.key_var.get().strip()
         
-        if not field or not key:
+        if not field or not keys_input:
             messagebox.showwarning("警告", "请填写完整信息")
             return
         
-        self.result = (field, key)
+        # 验证映射键格式
+        if ',' in keys_input:
+            keys = [key.strip() for key in keys_input.split(',') if key.strip()]
+            if not keys:
+                messagebox.showwarning("警告", "请输入有效的映射键")
+                return
+        
+        self.result = (field, keys_input)
         self.dialog.destroy()
     
     def cancel_clicked(self):

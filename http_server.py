@@ -2,53 +2,108 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import threading
 import time
+import uuid
 from datetime import datetime
 from typing import Optional
 from screenshot_manager import ScreenshotManager
+from api_response import APIResponse
 
 class HTTPServer:
     def __init__(self, camera_manager, ocr_processor, storage_manager, config_manager):
         self.app = Flask(__name__)
-        CORS(self.app)
+        
+        # 从配置文件读取CORS设置
+        cors_config = config_manager.get('http.cors', {})
+        if cors_config.get('enabled', True):
+            CORS(self.app, 
+                 origins=cors_config.get('origins', ['*']),
+                 methods=cors_config.get('methods', ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']),
+                 allow_headers=cors_config.get('allow_headers', ['Content-Type', 'Authorization', 'X-Request-ID']),
+                 supports_credentials=cors_config.get('supports_credentials', True)
+            )
         
         self.camera_manager = camera_manager
         self.ocr_processor = ocr_processor
         self.storage_manager = storage_manager
         self.config_manager = config_manager
         self.screenshot_manager = ScreenshotManager()
-        
-        # 截图区域设置 (API级别的持久设置)
-        self.screenshot_region = None
+
+        # 截图区域设置 (从配置文件加载)
+        self.screenshot_region = self.config_manager.get_screenshot_region()
         
         self.server_thread = None
         self.is_running = False
         
         self._setup_routes()
     
+    def _get_request_id(self):
+        """获取或生成request_id"""
+        return request.headers.get('X-Request-ID') or str(uuid.uuid4())
+
     def _setup_routes(self):
         """设置路由"""
         
+        @self.app.before_request
+        def handle_preflight():
+            """处理预检请求"""
+            if request.method == "OPTIONS":
+                cors_config = self.config_manager.get('http.cors', {})
+                if cors_config.get('enabled', True):
+                    response = jsonify({})
+                    
+                    # 设置CORS头部
+                    origins = cors_config.get('origins', ['*'])
+                    if origins == ['*'] or len(origins) == 1 and origins[0] == '*':
+                        response.headers.add("Access-Control-Allow-Origin", "*")
+                    else:
+                        # 如果指定了特定域名，检查请求的Origin
+                        origin = request.headers.get('Origin')
+                        if origin in origins:
+                            response.headers.add("Access-Control-Allow-Origin", origin)
+                    
+                    headers = ",".join(cors_config.get('allow_headers', ['Content-Type', 'Authorization', 'X-Request-ID']))
+                    methods = ",".join(cors_config.get('methods', ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']))
+                    
+                    response.headers.add('Access-Control-Allow-Headers', headers)
+                    response.headers.add('Access-Control-Allow-Methods', methods)
+                    
+                    if cors_config.get('supports_credentials', True):
+                        response.headers.add('Access-Control-Allow-Credentials', "true")
+                    
+                    return response
+
         @self.app.route('/health', methods=['GET'])
         def health_check():
             """健康检查服务"""
-            return jsonify({
+            request_id = self._get_request_id()
+            
+            health_data = {
                 'status': 'healthy',
-                'timestamp': datetime.now().isoformat(),
                 'camera_running': self.camera_manager.is_camera_running(),
                 'server_uptime': time.time() - getattr(self, 'start_time', time.time())
-            })
+            }
+            
+            return APIResponse.success_json(
+                data=health_data,
+                message="系统健康",
+                request_id=request_id
+            )
         
         @self.app.route('/ocr', methods=['POST'])
         def ocr_endpoint():
             """OCR识别服务"""
+            request_id = self._get_request_id()
+            
             try:
                 # 获取当前视频帧
                 frame = self.camera_manager.capture_screenshot()
                 if frame is None:
-                    return jsonify({
-                        'error': '无法获取摄像头画面',
-                        'timestamp': datetime.now().isoformat()
-                    }), 500
+                    return APIResponse.error_json(
+                        message="无法获取摄像头画面",
+                        code=1001,
+                        request_id=request_id,
+                        status_code=500
+                    )
                 
                 # 保存截图
                 screenshot_path = self.storage_manager.save_screenshot(frame, "ocr_request")
@@ -56,65 +111,119 @@ class HTTPServer:
                 # OCR识别
                 ocr_results = self.ocr_processor.process_image(frame)
                 
-                return jsonify({
-                    'success': True,
-                    'timestamp': datetime.now().isoformat(),
+                # 包含field_mappings信息
+                data = {
                     'screenshot_path': screenshot_path,
-                    'results': ocr_results
-                })
+                    'field_mappings': ocr_results,
+                    'screenshot_info': {
+                        'width': frame.shape[1] if frame is not None else 0,
+                        'height': frame.shape[0] if frame is not None else 0
+                    }
+                }
+                
+                return APIResponse.success_json(
+                    data=data,
+                    message="OCR识别成功",
+                    request_id=request_id
+                )
                 
             except Exception as e:
-                return jsonify({
-                    'error': f'OCR处理失败: {str(e)}',
-                    'timestamp': datetime.now().isoformat()
-                }), 500
+                return APIResponse.from_exception(
+                    exception=e,
+                    message="OCR处理失败",
+                    code=1002,
+                    request_id=request_id
+                )
         
         @self.app.route('/config/mappings', methods=['GET'])
         def get_mappings():
             """获取字段映射配置"""
-            return jsonify({
-                'mappings': self.config_manager.get_field_mappings()
-            })
+            request_id = self._get_request_id()
+            
+            mappings = self.config_manager.get_field_mappings()
+            data = {
+                'field_mappings': mappings
+            }
+            
+            return APIResponse.success_json(
+                data=data,
+                message="获取字段映射成功",
+                request_id=request_id
+            )
         
         @self.app.route('/config/mappings', methods=['POST'])
         def update_mappings():
             """更新字段映射配置"""
+            request_id = self._get_request_id()
+            
             try:
                 data = request.get_json()
                 if not data or 'mappings' not in data:
-                    return jsonify({'error': '无效的请求数据'}), 400
+                    return APIResponse.error_json(
+                        message="无效的请求数据，缺少mappings字段",
+                        code=2001,
+                        request_id=request_id,
+                        status_code=400
+                    )
                 
                 mappings = data['mappings']
                 self.config_manager.set_field_mappings(mappings)
                 self.ocr_processor.update_field_mappings(mappings)
                 
-                return jsonify({
-                    'success': True,
-                    'message': '字段映射已更新'
-                })
+                result_data = {
+                    'field_mappings': mappings,
+                    'updated_count': len(mappings)
+                }
+                
+                return APIResponse.success_json(
+                    data=result_data,
+                    message="字段映射更新成功",
+                    request_id=request_id
+                )
                 
             except Exception as e:
-                return jsonify({
-                    'error': f'更新字段映射失败: {str(e)}'
-                }), 500
+                return APIResponse.from_exception(
+                    exception=e,
+                    message="更新字段映射失败",
+                    code=2002,
+                    request_id=request_id
+                )
         
         @self.app.route('/camera/status', methods=['GET'])
         def camera_status():
             """获取摄像头状态"""
-            return jsonify({
+            request_id = self._get_request_id()
+            
+            camera_data = {
                 'running': self.camera_manager.is_camera_running(),
                 'camera_index': self.camera_manager.camera_index,
                 'available_cameras': self.camera_manager.get_available_cameras()
-            })
+            }
+            
+            return APIResponse.success_json(
+                data=camera_data,
+                message="获取摄像头状态成功",
+                request_id=request_id
+            )
         
         @self.app.route('/storage/stats', methods=['GET'])
         def storage_stats():
             """获取存储统计信息"""
-            return jsonify(self.storage_manager.get_storage_stats())
+            request_id = self._get_request_id()
+            
+            stats_data = self.storage_manager.get_storage_stats()
+            
+            return APIResponse.success_json(
+                data=stats_data,
+                message="获取存储统计成功",
+                request_id=request_id
+            )
         
         @self.app.route('/screenshot/ocr', methods=['POST'])
         def screenshot_ocr():
             """屏幕截图OCR识别服务"""
+            request_id = self._get_request_id()
+            
             try:
                 data = request.get_json() or {}
                 
@@ -135,10 +244,12 @@ class HTTPServer:
                     screenshot = self.screenshot_manager.capture_fullscreen(method)
                 
                 if screenshot is None:
-                    return jsonify({
-                        'error': '屏幕截图失败',
-                        'timestamp': datetime.now().isoformat()
-                    }), 500
+                    return APIResponse.error_json(
+                        message="屏幕截图失败",
+                        code=3001,
+                        request_id=request_id,
+                        status_code=500
+                    )
                 
                 # 保存截图
                 screenshot_path = self.storage_manager.save_screenshot(screenshot, "screen_ocr")
@@ -146,22 +257,31 @@ class HTTPServer:
                 # OCR识别
                 ocr_results = self.ocr_processor.process_image(screenshot)
                 
-                return jsonify({
-                    'success': True,
-                    'timestamp': datetime.now().isoformat(),
+                # 返回数据
+                result_data = {
                     'screenshot_path': screenshot_path,
-                    'results': ocr_results,
-                    'screenshot_size': {
+                    'field_mappings': ocr_results,
+                    'screenshot_info': {
                         'width': screenshot.shape[1],
-                        'height': screenshot.shape[0]
+                        'height': screenshot.shape[0],
+                        'region': region,
+                        'method': method
                     }
-                })
+                }
+                
+                return APIResponse.success_json(
+                    data=result_data,
+                    message="屏幕截图OCR识别成功",
+                    request_id=request_id
+                )
                 
             except Exception as e:
-                return jsonify({
-                    'error': f'屏幕截图OCR处理失败: {str(e)}',
-                    'timestamp': datetime.now().isoformat()
-                }), 500
+                return APIResponse.from_exception(
+                    exception=e,
+                    message="屏幕截图OCR处理失败",
+                    code=3002,
+                    request_id=request_id
+                )
         
         @self.app.route('/screenshot/capture', methods=['POST'])
         def screenshot_capture():
@@ -238,6 +358,7 @@ class HTTPServer:
                 
                 if data.get('mode') == 'fullscreen':
                     self.screenshot_region = None
+                    self.config_manager.set_screenshot_region(None)
                     return jsonify({
                         'success': True,
                         'message': '已设置为全屏截图',
@@ -268,9 +389,10 @@ class HTTPServer:
                     
                     if x + width > screen_width or y + height > screen_height:
                         return jsonify({'error': '截图区域超出屏幕范围'}), 400
-                    
+
                     self.screenshot_region = {'x': x, 'y': y, 'width': width, 'height': height}
-                    
+                    self.config_manager.set_screenshot_region(self.screenshot_region)
+
                     return jsonify({
                         'success': True,
                         'message': f'已设置区域截图: ({x}, {y}) {width}x{height}',

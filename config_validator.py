@@ -24,17 +24,17 @@ class ConfigValidator:
             'field_mappings': {
                 'type': dict, 
                 'default': {
-                    '平均速度 (rpm)': 'avg_speed',
-                    '最高速度 (rpm)': 'max_speed',
-                    '最低速度 (rpm)': 'min_speed',
-                    '速度偏差 (rpm)': 'speed_deviation',
-                    '位置波动 (max)': 'position_deviation_max',
-                    '位置波动 (min)': 'position_deviation_min'
+                    '平均速度 (rpm)': ['avg_speed'],
+                    '最高速度 (rpm)': ['max_speed'],
+                    '最低速度 (rpm)': ['min_speed'],
+                    '速度偏差 (rpm)': ['speed_deviation'],
+                    '位置波动 (max)': ['position_deviation_max'],
+                    '位置波动 (min)': ['position_deviation_min']
                 }
             },
             'language': {'type': str, 'default': 'ch', 'options': ['ch', 'en', 'ch_sim']},
             'use_angle_cls': {'type': bool, 'default': False},
-            'use_absolute_value': {'type': bool, 'default': True}  # 是否取绝对值
+            'use_absolute_value': {'type': bool, 'default': False}  # 是否取绝对值
         },
         'storage': {
             'screenshot_dir': {'type': str, 'default': './screenshots'},
@@ -43,7 +43,7 @@ class ConfigValidator:
         },
         'http': {
             'host': {'type': str, 'default': '0.0.0.0'},
-            'port': {'type': int, 'default': 9501, 'min': 1024, 'max': 65535},
+            'port': {'type': int, 'default': 19005, 'min': 1024, 'max': 65535},
             'debug': {'type': bool, 'default': False},
             'enabled': {'type': bool, 'default': True},
             'cors_enabled': {'type': bool, 'default': True}

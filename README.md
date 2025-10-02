@@ -40,6 +40,24 @@ POST /screenshot/ocr
 - `region` (可选): 截图区域 `{"x": 0, "y": 0, "width": 1920, "height": 1080}`
 - `method` (可选): 截图方法 `"auto"`, `"pyautogui"`, `"pil"`, `"screencapture"`, `"win32"`
 
+```text
+{
+  "status": False,
+  "message": message,
+  "msg": message,
+  "code": code,
+  "timestamp": datetime.now().isoformat(),
+  "request_id": request_id or str(uuid.uuid4()),
+  "error": error_detail or message,
+  "data": {
+    "field_mappings": {
+      "key1": "value1",
+      "key2": "value2"
+    }
+  }
+}
+```
+
 **纯屏幕截图**
 ```
 POST /screenshot/capture

@@ -9,16 +9,29 @@
   },
   "ocr": {
     "field_mappings": {
-      "平均速度 (rpm)": "avg_speed",
-      "最高速度 (rpm)": "max_speed",
-      "最低速度 (rpm)": "min_speed",
-      "速度偏差 (rpm)": "speed_deviation",
-      "位置波动 (max)": "position_deviation_max",
-      "位置波动 (min)": "position_deviation_min"
+      "平均速度 (rpm)": [
+        "avg_speed"
+      ],
+      "最高速度 (rpm)": [
+        "max_speed"
+      ],
+      "最低速度 (rpm)": [
+        "min_speed"
+      ],
+      "速度偏差 (rpm)": [
+        "speed_deviation"
+      ],
+      "位置波动 (max)": [
+        "position_deviation_max"
+      ],
+      "位置波动 (min)": [
+        "position_deviation1_min",
+        "position_deviation2_min"
+      ]
     },
     "language": "ch",
     "use_angle_cls": true,
-    "use_absolute_value": true,
+    "use_absolute_value": false,
     "use_gpu": false,
     "easyocr": {
       "use_gpu": false,
@@ -32,7 +45,34 @@
   },
   "http": {
     "host": "0.0.0.0",
-    "port": 9501,
-    "debug": false
+    "port": 19005,
+    "debug": false,
+    "cors": {
+      "enabled": true,
+      "origins": [
+        "*"
+      ],
+      "methods": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+        "OPTIONS"
+      ],
+      "allow_headers": [
+        "Content-Type",
+        "Authorization",
+        "X-Request-ID"
+      ],
+      "supports_credentials": true
+    }
+  },
+  "screenshot": {
+    "region": {
+      "x": 1399,
+      "y": 317,
+      "width": 348,
+      "height": 452
+    }
   }
 }

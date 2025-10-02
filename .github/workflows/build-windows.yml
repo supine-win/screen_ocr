@@ -50,15 +50,9 @@ jobs:
       env:
         PYTHONIOENCODING: utf-8
     
-    - name: Build executable - onefile mode (single exe)
-      run: |
-        python build_windows_modes.py --mode onefile
-      env:
-        PYTHONIOENCODING: utf-8
-        
     - name: Build executable - onedir mode (directory distribution)
       run: |
-        python build_windows_modes.py --mode onedir
+        python build_windows.py
       env:
         PYTHONIOENCODING: utf-8
     

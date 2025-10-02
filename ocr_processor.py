@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import re
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from pathlib import Path
 import sys
 from model_path_manager import ModelPathManager
@@ -18,12 +18,11 @@ class OCRProcessor:
             import easyocr
             log_info("初始化EasyOCR...")
             
-            # 设置环境变量和模型结构
-            ModelPathManager.setup_easyocr_environment()
-            ModelPathManager.setup_easyocr_model_structure()
+            # 设置环境变量
+            ModelPathManager.setup_easyocr_environment(config)
             
             # 获取正确的初始化参数
-            reader_params = ModelPathManager.get_easyocr_reader_params()
+            reader_params = ModelPathManager.get_easyocr_reader_params(config)
             
             easyocr_config = self.config.get('easyocr', {})
             use_gpu = easyocr_config.get('use_gpu', False)
@@ -312,22 +311,34 @@ class OCRProcessor:
                 log_error(f"EasyOCR识别失败: {e}")
                 return {}
             
-            # 根据字段映射提取值
+            # 根据字段映射提取值 - 支持一对多映射
             extracted_values = {}
             print(f"开始字段匹配，映射: {self.field_mappings}")
             
-            for field_name, mapped_key in self.field_mappings.items():
+            for field_name, mapped_keys in self.field_mappings.items():
                 print(f"查找字段: '{field_name}'")
                 value = self._extract_field_value(texts, field_name)
+                
+                # 支持向后兼容：mapped_keys可以是字符串或数组
+                if isinstance(mapped_keys, str):
+                    mapped_keys = [mapped_keys]
+                elif not isinstance(mapped_keys, list):
+                    print(f"  警告: 字段 '{field_name}' 的映射格式错误，跳过")
+                    continue
+                
                 if value:
                     # 处理数值（绝对值等）
                     processed_value = self._process_numeric_value(value)
-                    extracted_values[mapped_key] = processed_value
-                    print(f"  找到: {mapped_key} = {processed_value}")
+                    
+                    # 将相同的值设置到所有映射的key中
+                    for mapped_key in mapped_keys:
+                        extracted_values[mapped_key] = processed_value
+                        print(f"  找到: {mapped_key} = {processed_value}")
                 else:
-                    # 为未找到的字段设置None值，确保在结果中显示
-                    extracted_values[mapped_key] = None
-                    print(f"  未找到字段 '{field_name}' -> {mapped_key} = None")
+                    # 为未找到的字段，所有映射的key都设置为None
+                    for mapped_key in mapped_keys:
+                        extracted_values[mapped_key] = None
+                        print(f"  未找到字段 '{field_name}' -> {mapped_key} = None")
             
             print(f"最终结果: {extracted_values}")
             return extracted_values
@@ -341,8 +352,13 @@ class OCRProcessor:
     def _extract_field_value(self, texts: List[str], field_name: str) -> Optional[str]:
         """从文本列表中提取指定字段的值"""
         log_info(f"  查找字段 '{field_name}' 在文本中...")
+
+        # 方法1：使用模式匹配全文
+        result = self._extract_with_patterns(texts, field_name)
+        if result:
+            return result
         
-        # 方法1：逐个分析文本片段
+        # 方法2：逐个分析文本片段
         for i, text in enumerate(texts):
             log_info(f"  分析文本片段 {i+1}: '{text}'")
             result = self._extract_value_from_text(text, field_name)
@@ -350,13 +366,8 @@ class OCRProcessor:
                 log_info(f"  在文本片段 {i+1} 找到数值: {result}")
                 return result
         
-        # 方法2：跨片段组合匹配（处理OCR拆分字段的情况）
+        # 方法3：跨片段组合匹配（处理OCR拆分字段的情况）
         result = self._extract_cross_fragment(texts, field_name)
-        if result:
-            return result
-        
-        # 方法3：使用模式匹配全文
-        result = self._extract_with_patterns(texts, field_name)
         if result:
             return result
         
@@ -625,11 +636,17 @@ class OCRProcessor:
         
         return None
     
-    def update_field_mappings(self, mappings: Dict[str, str]):
-        """更新字段映射"""
+    def update_field_mappings(self, mappings: Dict[str, Any]):
+        """更新字段映射 - 支持一对多映射
+        
+        Args:
+            mappings: 字段映射，格式如：
+                {"字段名": "单个key"} 或 {"字段名": ["key1", "key2"]}
+        """
         self.field_mappings = mappings
+        print(f"字段映射已更新: {mappings}")
     
-    def get_field_mappings(self) -> Dict[str, str]:
+    def get_field_mappings(self) -> Dict[str, Any]:
         """获取当前字段映射"""
         return self.field_mappings.copy()
     

@@ -10,9 +10,6 @@ datas = [
     ('exe_optimization.py', '.'),       # 包含exe优化模块
 ]
 
-# EasyOCR专用版本 - 已移除PaddleOCR/PaddleX依赖
-print("Building EasyOCR-only version (PaddleOCR/PaddleX removed)")
-
 binaries = []
 hiddenimports = [
     # EasyOCR相关
@@ -24,34 +21,38 @@ hiddenimports = [
     
     # PyTorch相关
     'torch',
-    'torch._C',
-    'torch._ops',
     'torchvision',
-    'torchvision.ops',
     'torchvision.transforms',
+    'torch.nn',
+    'torch.nn.functional',
     
-    # 图像处理
+    # CV和图像处理
     'cv2',
     'PIL',
     'PIL.Image',
+    'PIL.ImageDraw',
+    'PIL.ImageFont',
     'numpy',
-    'scipy',
-    'scipy.ndimage',
-    'scikit-image',
     'skimage',
+    'skimage.measure',
+    'scipy',
+    'scipy.spatial',
+    'scipy.spatial.distance',
     
-    # Web服务
-    'flask',
-    'flask_cors',
-    
-    # GUI
-    'tkinter',
+    # 文本处理
+    'arabic_reshaper',
+    'bidi',
     
     # 其他依赖
     'python_bidi',
     'shapely',
     'pyclipper',
     'ninja',
+    
+    # PaddleOCR作为备选
+    'paddleocr',
+    'paddle',
+    'paddlex',
 ]
 
 # 收集EasyOCR数据和模型
@@ -74,7 +75,13 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('skimage')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
-# EasyOCR专用版本 - PaddleOCR/PaddleX已移除
+# 收集PaddleOCR作为备选
+tmp_ret = collect_all('paddleocr')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('paddle')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('paddlex')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 # 不再打包EasyOCR模型文件，让用户手动下载
 # 创建空的模型目录结构
@@ -133,20 +140,18 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# onedir模式：创建目录而不是单文件
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
-    [],
+    [],  # 不包含 a.binaries 和 a.datas
+    exclude_binaries=True,  # 关键：排除二进制文件，使用onedir模式
     name='MonitorOCR_EasyOCR',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,  # 禁用UPX，避免压缩导致的问题
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=True,  # 开启控制台以便查看调试信息
+    upx=False,
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -154,14 +159,13 @@ exe = EXE(
     entitlements_file=None,
 )
 
-# macOS App Bundle
-app = BUNDLE(
+# 创建COLLECT对象用于onedir分发
+coll = COLLECT(
     exe,
-    name='MonitorOCR_EasyOCR.app',
-    icon=None,
-    bundle_identifier='com.windsurf.monitorocr',
-    info_plist={
-        'NSHighResolutionCapable': True,
-        'NSRequiresAquaSystemAppearance': False,
-    }
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='MonitorOCR_EasyOCR'
 )

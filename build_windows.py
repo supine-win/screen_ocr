@@ -1,250 +1,255 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Windows packaging script
-Use PyInstaller to package the application as Windows executable
+Windows打包工具 - onedir目录模式
+专用于构建目录分发模式的可执行程序
 """
 
 import os
 import sys
 import subprocess
-import shutil
+import argparse
 from pathlib import Path
+import shutil
+import datetime
 
-def build_windows_executable():
-    """Build Windows executable"""
+def check_models():
+    """检查模型配置（模型不打包，用户手动下载）"""
+    print("EasyOCR模型配置检查...")
+    print("-" * 40)
+    print("✅ 模型策略: 用户手动下载")
+    print("   - exe不包含模型（体积更小）")
+    print("   - 用户首次使用时下载模型")
+    print("   - 模型放入 easyocr_models/ 目录")
+    print("-" * 40)
     
-    print("Starting Windows executable build...")
+    # 仅供参考，显示本地是否有模型
+    local_model_dir = Path("easyocr_models")
+    if local_model_dir.exists():
+        models = list(local_model_dir.glob("*.pth"))
+        if models:
+            print(f"\n参考：本地有 {len(models)} 个模型文件（不会打包）")
+            total_size = sum(m.stat().st_size for m in models) / (1024*1024)
+            print(f"总大小: {total_size:.1f} MB")
     
-    # Check if PyInstaller is installed
+    print("\n✅ 配置检查通过（模型由用户提供）")
+    return True
+
+def prepare_build():
+    """准备打包环境"""
+    print("\n准备打包环境...")
+    
+    # 检查PyInstaller是否安装
     try:
         import PyInstaller
+        print(f"✅ PyInstaller已安装: {PyInstaller.__version__}")
     except ImportError:
-        print("PyInstaller not installed, installing...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
-    
-    # Clean previous builds
-    build_dirs = ["build", "dist", "__pycache__"]
-    for dir_name in build_dirs:
-        if os.path.exists(dir_name):
-            shutil.rmtree(dir_name)
-            print(f"Cleaned directory: {dir_name}")
-    
-    # Copy PaddleOCR model files
-    from model_manager import ModelManager
-    model_manager = ModelManager()
-    if not model_manager.copy_models_for_packaging():
-        print("Model file copy failed, please run prepare_models.py first")
-        return False
-    
-    # PyInstaller command parameters (macOS uses : separator)
-    import platform
-    separator = ":" if platform.system() != "Windows" else ";"
-    
-    cmd = [
-        "pyinstaller",
-        "--onefile",                    # Package as single file
-        "--windowed",                   # Windows GUI application
-        "--name=MonitorOCR",           # Executable name
-        "--icon=icon.ico",             # Icon file (if exists)
-        f"--add-data=config.json{separator}.",    # Include config file
-        f"--add-data=paddlex_models{separator}paddlex_models",  # Include model files
-        "--hidden-import=paddleocr",   # Hidden imports
-        "--hidden-import=cv2",
-        "--hidden-import=PIL",
-        "--hidden-import=numpy",
-        "--hidden-import=flask",
-        "--hidden-import=tkinter",
-        "--hidden-import=paddle",
-        "--collect-all=paddleocr",     # Collect all paddleocr files
-        "--collect-all=paddle",
-        "--collect-all=paddlex",
-        "main.py"
-    ]
-    
-    # Remove icon parameter if icon file doesn't exist
-    if not os.path.exists("icon.ico"):
-        cmd = [arg for arg in cmd if not arg.startswith("--icon")]
-    
-    try:
-        # Execute packaging command
-        print("Executing PyInstaller packaging...")
-        print(" ".join(cmd))
-        subprocess.check_call(cmd)
-        
-        # Check output files (different for different platforms)
-        import platform
-        if platform.system() == "Darwin":  # macOS
-            app_path = Path("dist/MonitorOCR.app")
-            exe_path = app_path / "Contents/MacOS/MonitorOCR"
-        else:  # Windows
-            app_path = Path("dist/MonitorOCR.exe")
-            exe_path = app_path
-        
-        if app_path.exists():
-            print(f"Packaging successful!")
-            print(f"Application location: {app_path.absolute()}")
-            
-            if exe_path.exists():
-                print(f"Executable size: {exe_path.stat().st_size / 1024 / 1024:.1f} MB")
-            
-            # Create release directory
-            release_dir = Path("release")
-            release_dir.mkdir(exist_ok=True)
-            
-            # Copy files to release directory
-            if platform.system() == "Darwin":
-                # macOS: Copy entire .app bundle
-                if (release_dir / "MonitorOCR.app").exists():
-                    shutil.rmtree(release_dir / "MonitorOCR.app")
-                shutil.copytree(app_path, release_dir / "MonitorOCR.app")
-                
-                # Create startup script
-                with open(release_dir / "start.sh", "w", encoding="utf-8") as f:
-                    f.write("#!/bin/bash\n")
-                    f.write("echo 'Starting Monitor OCR System...'\n")
-                    f.write("open MonitorOCR.app\n")
-                os.chmod(release_dir / "start.sh", 0o755)
-            else:
-                # Windows: Copy exe file
-                shutil.copy2(exe_path, release_dir / "MonitorOCR.exe")
-                
-                # Create startup script
-                with open(release_dir / "start.bat", "w", encoding="utf-8") as f:
-                    f.write("@echo off\n")
-                    f.write("echo Starting Monitor OCR System...\n")
-                    f.write("MonitorOCR.exe\n")
-                    f.write("pause\n")
-            
-            # Copy config files and documentation
-            shutil.copy2("config.json", release_dir / "config.json")
-            shutil.copy2("README.md", release_dir / "README.md")
-            
-            print(f"Release package created: {release_dir.absolute()}")
-            
-        else:
-            print("Packaging failed: Output file not found")
-            return False
-            
-    except subprocess.CalledProcessError as e:
-        print(f"Packaging failed: {e}")
-        return False
+        print("❌ PyInstaller未安装，正在安装...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "pyinstaller"], check=True)
+        print("✅ PyInstaller安装完成")
     
     return True
 
-def create_installer():
-    """创建Windows安装程序（需要NSIS）"""
+def build_executable():
+    """构建onedir模式可执行文件"""
+    print("\n开始构建onedir模式...")
     
-    nsis_script = """
-; MonitorOCR安装脚本
-!define APPNAME "MonitorOCR"
-!define COMPANYNAME "YourCompany"
-!define DESCRIPTION "监控OCR系统"
-!define VERSIONMAJOR 1
-!define VERSIONMINOR 0
-!define VERSIONBUILD 0
-
-!define HELPURL "https://github.com/yourrepo"
-!define UPDATEURL "https://github.com/yourrepo"
-!define ABOUTURL "https://github.com/yourrepo"
-
-!define INSTALLSIZE 200000
-
-RequestExecutionLevel admin
-
-InstallDir "$PROGRAMFILES\\${APPNAME}"
-
-Name "${APPNAME}"
-Icon "icon.ico"
-outFile "MonitorOCR_Setup.exe"
-
-!include LogicLib.nsh
-
-page components
-page directory
-page instfiles
-
-!macro VerifyUserIsAdmin
-UserInfo::GetAccountType
-pop $0
-${If} $0 != "admin"
-    messageBox mb_iconstop "需要管理员权限才能安装此程序。"
-    setErrorLevel 740
-    quit
-${EndIf}
-!macroend
-
-function .onInit
-    setShellVarContext all
-    !insertmacro VerifyUserIsAdmin
-functionEnd
-
-section "install"
-    setOutPath $INSTDIR
-    file "release\\MonitorOCR.exe"
-    file "release\\config.json"
-    file "release\\README.md"
-    file "release\\start.bat"
+    spec_file = "MonitorOCR_EasyOCR.spec"
+    print("📂 使用onedir模式（目录分发，一次解压永久使用）")
     
-    writeUninstaller "$INSTDIR\\uninstall.exe"
+    if not Path(spec_file).exists():
+        print(f"❌ spec文件不存在: {spec_file}")
+        return False
     
-    createDirectory "$SMPROGRAMS\\${APPNAME}"
-    createShortCut "$SMPROGRAMS\\${APPNAME}\\${APPNAME}.lnk" "$INSTDIR\\MonitorOCR.exe"
-    createShortCut "$DESKTOP\\${APPNAME}.lnk" "$INSTDIR\\MonitorOCR.exe"
+    # 清理之前的构建
+    build_dir = Path("build")
+    dist_dir = Path("dist")
     
-    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "DisplayName" "${APPNAME}"
-    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "UninstallString" "$INSTDIR\\uninstall.exe"
-    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "InstallLocation" "$INSTDIR"
-    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "DisplayIcon" "$INSTDIR\\MonitorOCR.exe"
-    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "Publisher" "${COMPANYNAME}"
-    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "HelpLink" "${HELPURL}"
-    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "URLUpdateInfo" "${UPDATEURL}"
-    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "URLInfoAbout" "${ABOUTURL}"
-    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "DisplayVersion" "${VERSIONMAJOR}.${VERSIONMINOR}.${VERSIONBUILD}"
-    WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "VersionMajor" ${VERSIONMAJOR}
-    WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "VersionMinor" ${VERSIONMINOR}
-    WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "NoModify" 1
-    WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "NoRepair" 1
-    WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" "EstimatedSize" ${INSTALLSIZE}
-sectionEnd
+    if build_dir.exists():
+        shutil.rmtree(build_dir)
+        print("🧹 清理build目录")
+    
+    if dist_dir.exists():
+        shutil.rmtree(dist_dir)
+        print("🧹 清理dist目录")
+    
+    try:
+        # 执行打包
+        cmd = [sys.executable, "-m", "PyInstaller", "--clean", spec_file]
+        print(f"执行命令: {' '.join(cmd)}")
+        
+        result = subprocess.run(cmd, 
+                              capture_output=True, 
+                              text=True, 
+                              encoding='utf-8')
+        
+        if result.returncode == 0:
+            print("✅ 构建成功!")
+            return verify_build()
+        else:
+            print("❌ 构建失败!")
+            print("错误输出:")
+            print(result.stderr)
+            return False
+            
+    except Exception as e:
+        print(f"❌ 构建过程出错: {e}")
+        return False
 
-section "uninstall"
-    delete "$INSTDIR\\MonitorOCR.exe"
-    delete "$INSTDIR\\config.json"
-    delete "$INSTDIR\\README.md"
-    delete "$INSTDIR\\start.bat"
-    delete "$INSTDIR\\uninstall.exe"
+def verify_build():
+    """验证onedir构建结果"""
+    print("\n验证onedir模式构建结果...")
     
-    rmDir "$INSTDIR"
+    # onedir模式验证
+    exe_path = Path("dist/MonitorOCR_EasyOCR/MonitorOCR_EasyOCR.exe")
+    dist_dir = Path("dist/MonitorOCR_EasyOCR")
     
-    delete "$SMPROGRAMS\\${APPNAME}\\${APPNAME}.lnk"
-    rmDir "$SMPROGRAMS\\${APPNAME}"
-    delete "$DESKTOP\\${APPNAME}.lnk"
+    if not exe_path.exists():
+        print("❌ onedir可执行文件不存在")
+        return False
+        
+    if not dist_dir.exists():
+        print("❌ onedir分发目录不存在")
+        return False
+        
+    print(f"✅ onedir可执行文件: {exe_path}")
     
-    DeleteRegKey HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}"
-sectionEnd
+    # 统计目录大小
+    total_size = 0
+    file_count = 0
+    for file_path in dist_dir.rglob("*"):
+        if file_path.is_file():
+            total_size += file_path.stat().st_size
+            file_count += 1
+    
+    size_mb = total_size / (1024 * 1024)
+    print(f"   目录总大小: {size_mb:.1f} MB")
+    print(f"   文件数量: {file_count}")
+    print("✅ onedir模式构建完成")
+    
+    return create_release_package(exe_path, size_mb)
+
+def create_release_package(exe_path, size_mb):
+    """创建onedir发布包"""
+    print("\n创建发布包...")
+    
+    # 为GitHub Actions准备release目录
+    release_dir = Path("release")
+    release_dir.mkdir(exist_ok=True)
+    
+    try:
+        # 复制整个onedir目录
+        dist_dir = exe_path.parent
+        release_app_dir = release_dir / "MonitorOCR_EasyOCR"
+        if release_app_dir.exists():
+            shutil.rmtree(release_app_dir)
+        shutil.copytree(dist_dir, release_app_dir)
+        print(f"✅ 目录已复制到: {release_app_dir}")
+        
+        # 复制配置文件
+        config_file = Path("config.json")
+        if config_file.exists():
+            shutil.copy2(config_file, release_dir / "config.json")
+            print("✅ 配置文件已复制")
+        
+        # 创建README
+        readme_content = create_readme_content(size_mb)
+        (release_dir / "README.md").write_text(readme_content, encoding='utf-8')
+        print("✅ README文档已创建")
+        
+    except Exception as e:
+        print(f"⚠️  复制到release目录失败: {e}")
+        return False
+    
+    print(f"\n✅ onedir模式构建完成!")
+    print(f"📦 发布包位置: {release_dir.absolute()}")
+    
+    return True
+
+def create_readme_content(size_mb):
+    """创建README内容"""
+    return f"""# MonitorOCR Windows版本 - 目录版本
+
+## 版本信息
+- 打包模式: onedir
+- 文件大小: {size_mb:.1f} MB  
+- OCR引擎: EasyOCR (纯净版本，已移除PaddleOCR)
+- 模型策略: 用户手动下载（体积更小）
+- exe文件和依赖文件分开存放
+
+## 特性
+- ✅ 启动快速（无需解压）
+- ✅ 基于EasyOCR的高精度中英文识别
+- ✅ 支持配置文件自定义设置
+- ⚠️  文件较多，需要保持目录结构完整
+- 启动时间: 2-5秒
+
+## 首次使用 - 下载模型
+将以下模型文件下载到 `easyocr_models/` 目录：
+
+**必需模型：**
+- craft_mlt_25k.pth (检测模型, ~79MB)
+- zh_sim_g2.pth (中文识别, ~21MB)
+
+**下载方式：**
+1. 自动下载：运行 `python prepare_models_easyocr.py`
+2. 手动下载：从 https://github.com/JaidedAI/EasyOCR/releases
+
+## 运行说明
+1. 创建 `easyocr_models` 文件夹
+2. 下载模型文件到该文件夹
+3. 运行 MonitorOCR_EasyOCR/MonitorOCR_EasyOCR.exe
+4. 配置文件: config.json
+
+## 目录结构
+```
+MonitorOCR/
+├── MonitorOCR_EasyOCR/
+│   ├── MonitorOCR_EasyOCR.exe
+│   └── (其他依赖文件)
+├── config.json
+└── easyocr_models/          # 手动创建并放入模型
+    ├── craft_mlt_25k.pth
+    └── zh_sim_g2.pth
+```
+
+## 性能建议
+- 将程序放在SSD上可提高启动速度
+- 添加杀毒软件白名单避免误报
+- 启动速度快，无需解压
+
+构建时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+构建模式: onedir
 """
+
+def main():
+    """主函数"""
+    print("=" * 60)
+    print("Windows EasyOCR onedir 打包工具")
+    print("=" * 60)
+    print("构建模式: onedir (目录分发模式)")
+    print()
     
-    with open("installer.nsi", "w", encoding="utf-8") as f:
-        f.write(nsis_script)
+    # 检查模型
+    if not check_models():
+        return False
     
-    print("NSIS安装脚本已创建: installer.nsi")
-    print("请安装NSIS并运行以下命令创建安装程序:")
-    print("makensis installer.nsi")
+    # 准备构建环境
+    if not prepare_build():
+        return False
+    
+    # 构建onedir模式
+    success = build_executable()
+    
+    if success:
+        print(f"\n🎯 构建完成! 查看 release/ 目录")
+        print("\n💡 onedir版本特点:")
+        print("   - 启动快速，无需解压")
+        print("   - 文件较多，需保持目录结构完整")
+        print("   - 适合本地部署和快速启动")
+    else:
+        print(f"\n❌ 构建失败，请检查错误信息")
+        
+    return success
 
 if __name__ == "__main__":
-    if build_windows_executable():
-        # Check if running in CI environment (no interactive input available)
-        import sys
-        if sys.stdin.isatty():
-            # Interactive mode
-            print("\nCreate installer script? (y/n): ", end="")
-            try:
-                if input().lower().startswith('y'):
-                    create_installer()
-            except EOFError:
-                print("Skipping installer creation (non-interactive environment)")
-        else:
-            # Non-interactive mode (CI/CD)
-            print("Non-interactive environment, automatically creating installer script...")
-            create_installer()
+    success = main()
+    sys.exit(0 if success else 1)
