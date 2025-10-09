@@ -138,7 +138,7 @@ python main.py --config custom_config.json
     },
     "language": "ch",           // OCR语言
     "use_angle_cls": true,      // 文字方向分类
-    "use_absolute_value": true  // 是否取绝对值
+    "use_absolute_value": false  // 是否取绝对值
   },
   "storage": {
     "screenshot_dir": "./screenshots", // 截图存储目录
@@ -175,7 +175,7 @@ python main.py --config custom_config.json
 
 #### 2. 负数识别与绝对值处理
 ```json
-"use_absolute_value": true   // 启用绝对值处理
+"use_absolute_value": false   // 启用绝对值处理
 "use_absolute_value": false  // 保留原始数值（包括负号）
 ```
 

@@ -240,7 +240,7 @@ class OCRProcessor:
             raise Exception(f"EasyOCR初始化失败，无法继续运行: {e}")
             
         self.field_mappings = config.get('field_mappings', {})
-        self.use_absolute_value = config.get('use_absolute_value', True)
+        self.use_absolute_value = config.get('use_absolute_value', False)
     
     def process_image(self, image: np.ndarray) -> Dict[str, str]:
         """处理图像并提取字段值"""
@@ -565,12 +565,12 @@ class OCRProcessor:
             # 基于英文关键字匹配
             for i, text in chinese_failed_texts:
                 if field_suffix == "max" and "max" in text.lower():
-                    numbers = re.findall(r'(\d+\.?\d*)', text)
+                    numbers = re.findall(r'(-?\d+\.?\d*)', text)
                     if numbers:
                         log_info(f"  中文识别失败修复：max字段 -> {numbers[0]}")
                         return numbers[0]
                 elif field_suffix == "min" and ("min" in text.lower() or "mi" in text.lower()):
-                    numbers = re.findall(r'(\d+\.?\d*)', text)
+                    numbers = re.findall(r'(-?\d+\.?\d*)', text)
                     if numbers:
                         log_info(f"  中文识别失败修复：min字段 -> {numbers[0]}")
                         return numbers[0]
@@ -580,7 +580,7 @@ class OCRProcessor:
             # 策略2：精确匹配
             for i, text in enumerate(texts):
                 if base_field in text and field_suffix in text.lower():
-                    numbers = re.findall(r'(\d+\.?\d*)', text)
+                    numbers = re.findall(r'(-?\d+\.?\d*)', text)
                     if numbers:
                         log_info(f"  后备方案：精确匹配 '{text}' 中找到数值: {numbers[0]}")
                         return numbers[0]
@@ -597,7 +597,7 @@ class OCRProcessor:
                         text_lower = text.lower()
                         for pattern in similar_patterns[field_suffix]:
                             if pattern in text_lower:
-                                numbers = re.findall(r'(\d+\.?\d*)', text)
+                                numbers = re.findall(r'(-?\d+\.?\d*)', text)
                                 if numbers:
                                     log_info(f"  后备方案：模糊匹配 '{text}' (模式: {pattern}) 中找到数值: {numbers[0]}")
                                     return numbers[0]
@@ -607,13 +607,13 @@ class OCRProcessor:
             if len(base_texts) >= 2:
                 if field_suffix == "max":
                     # 第一个通常是max
-                    numbers = re.findall(r'(\d+\.?\d*)', base_texts[0])
+                    numbers = re.findall(r'(-?\d+\.?\d*)', base_texts[0])
                     if numbers:
                         log_info(f"  后备方案：位置推断(第1个) '{base_texts[0]}' 作为max: {numbers[0]}")
                         return numbers[0]
                 elif field_suffix == "min":
                     # 第二个通常是min
-                    numbers = re.findall(r'(\d+\.?\d*)', base_texts[1])
+                    numbers = re.findall(r'(-?\d+\.?\d*)', base_texts[1])
                     if numbers:
                         log_info(f"  后备方案：位置推断(第2个) '{base_texts[1]}' 作为min: {numbers[0]}")
                         return numbers[0]
@@ -622,14 +622,14 @@ class OCRProcessor:
             for i, text in enumerate(texts):
                 if base_field in text:
                     # 在同一个文本中查找数字
-                    numbers = re.findall(r'(\d+\.?\d*)', text)
+                    numbers = re.findall(r'(-?\d+\.?\d*)', text)
                     if numbers:
                         log_info(f"  后备方案：在文本 '{text}' 中找到数值: {numbers[0]}")
                         return numbers[0]
                     
                     # 在后续文本中查找数字
                     for j in range(i + 1, min(i + 3, len(texts))):
-                        numbers = re.findall(r'(\d+\.?\d*)', texts[j])
+                        numbers = re.findall(r'(-?\d+\.?\d*)', texts[j])
                         if numbers:
                             log_info(f"  后备方案：在后续文本 '{texts[j]}' 中找到数值: {numbers[0]}")
                             return numbers[0]
