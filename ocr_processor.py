@@ -18,72 +18,28 @@ class OCRProcessor:
             import easyocr
             log_info("初始化EasyOCR...")
             
-            # 设置环境变量
+            # 统一的模型路径管理
             ModelPathManager.setup_easyocr_environment(config)
-            
-            # 获取正确的初始化参数
             reader_params = ModelPathManager.get_easyocr_reader_params(config)
             
             easyocr_config = self.config.get('easyocr', {})
             use_gpu = easyocr_config.get('use_gpu', False)
-            verbose = easyocr_config.get('verbose', True)
-            model_storage_directory = easyocr_config.get('model_storage_directory', './easyocr_models')
-
-            # 在打包环境中，优先使用exe同目录下的模型
-            if getattr(sys, 'frozen', False):
-                # 打包环境，检查exe同目录下的easyocr_models
-                exe_dir = Path(sys.executable).parent
-                exe_model_dir = exe_dir / "easyocr_models"
-                
-                if exe_model_dir.exists():
-                    models = list(exe_model_dir.glob("*.pth"))
-                    if models:
-                        model_storage_directory = str(exe_model_dir)
-                        log_info(f"✅ 使用exe同目录模型: {model_storage_directory}")
-                        log_info(f"找到模型文件: {len(models)} 个")
-                        for model in models:
-                            size_mb = model.stat().st_size / (1024 * 1024)
-                            log_info(f"  - {model.name}: {size_mb:.1f} MB")
-                    else:
-                        log_warning(f"⚠️  exe同目录模型文件夹存在但无模型文件: {exe_model_dir}")
-                else:
-                    log_warning(f"⚠️  请在exe同目录创建模型文件夹: {exe_model_dir}")
-                    log_info("下载说明:")
-                    log_info("  1. 在exe同目录创建 easyocr_models 文件夹")
-                    log_info("  2. 下载 craft_mlt_25k.pth 和 zh_sim_g2.pth 到该文件夹")
-            else:
-                # 开发环境，使用配置指定的目录
-                local_model_dir = Path(model_storage_directory)
-                if local_model_dir.exists():
-                    models = list(local_model_dir.glob("*.pth"))
-                    if models:
-                        log_info(f"本地模型目录: {model_storage_directory}")  
-                        log_info(f"找到模型文件: {len(models)} 个")
-                        for model in models:
-                            size_mb = model.stat().st_size / (1024 * 1024)
-                            log_info(f"  - {model.name}: {size_mb:.1f} MB")
-                    else:
-                        log_warning(f"模型目录存在但无模型文件: {model_storage_directory}")
-                else:
-                    log_warning(f"模型目录不存在: {model_storage_directory}")
+            verbose = easyocr_config.get('verbose', False)  # 减少冗余日志
             
-            # 设置EasyOCR的下载功能
+            # 使用ModelPathManager提供的参数作为基础
             base_params = {
                 'lang_list': ['ch_sim', 'en'],
                 'gpu': use_gpu,
                 'verbose': verbose,
-                'model_storage_directory': model_storage_directory,
-                'download_enabled': True  # 允许下载，但优先使用本地模型
             }
             
-            # 移除None值的参数
-            base_params = {k: v for k, v in base_params.items() if v is not None}
-            log_info(f"EasyOCR GPU设置: {use_gpu}")
-            log_info(f"模型存储目录: {base_params.get('model_storage_directory', '默认')}")
-            
-            # 合并来自ModelPathManager的参数（用于打包环境）
+            # 合并ModelPathManager的参数
             base_params.update(reader_params)
             
+            # 移除None值的参数并只输出关键信息
+            base_params = {k: v for k, v in base_params.items() if v is not None}
+            log_info(f"EasyOCR GPU设置: {use_gpu}")
+            log_info(f"模型存储目录: {base_params.get('model_storage_directory', './easyocr_models')}")
             log_info(f"EasyOCR初始化参数: {base_params}")
             
             try:
