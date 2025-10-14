@@ -39,9 +39,9 @@ class MonitorOCRV2:
         logger.info("MonitorOCR v2 - Starting up...")
         logger.info("=" * 60)
         
-        # 创建调试信息（打包环境）
-        debug_info = ModelPathManager.create_debug_info()
-        logger.info(f"Running in {debug_info['environment']} environment")
+        # 检查运行环境
+        env_type = "packaged" if getattr(sys, 'frozen', False) else "development"
+        logger.info(f"Running in {env_type} environment")
         
         # 加载和验证配置
         config_path = ModelPathManager.get_config_path()

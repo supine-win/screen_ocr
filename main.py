@@ -57,12 +57,8 @@ def main():
     """主函数"""
     import argparse
     
-    # 创建调试信息（用于诊断Windows打包问题）
-    try:
-        debug_info = ModelPathManager.create_debug_info()
-        print(f"运行环境: {debug_info['environment']}")
-    except Exception as e:
-        print(f"调试信息创建失败: {e}")
+    # 检查运行环境
+    print(f"运行环境: {'打包环境' if getattr(sys, 'frozen', False) else '开发环境'}")
     
     parser = argparse.ArgumentParser(description='监控OCR系统')
     parser.add_argument('--no-gui', action='store_true', help='无GUI模式运行')

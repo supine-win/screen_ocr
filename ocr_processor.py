@@ -15,6 +15,15 @@ class OCRProcessor:
         # EasyOCR-only版本，移除PaddleOCR支持
         self.easyocr_reader = None
         try:
+            # 在导入EasyOCR之前强制设置单一路径（打包环境）
+            if getattr(sys, 'frozen', False):
+                try:
+                    from force_single_model_path import ForceSingleModelPath
+                    log_info("打包环境：强制设置单一模型路径...")
+                    ForceSingleModelPath.setup_complete_force()
+                except ImportError:
+                    log_warning("强制单一路径管理器不可用，使用标准路径管理")
+            
             import easyocr
             log_info("初始化EasyOCR...")
             
@@ -43,142 +52,16 @@ class OCRProcessor:
             log_info(f"EasyOCR初始化参数: {base_params}")
             
             try:
-                # 在打包环境中，强制禁用网络访问
-                if getattr(sys, 'frozen', False):
-                    # 完全离线模式初始化
-                    log_info("打包环境：启用完全离线模式")
-
-                    # 1. 彻底屏蔽所有网络模块
-                    import urllib.request
-                    import urllib.parse
-                    import urllib.error
-                    import socket
-                    import ssl
-
-                    # 保存原始函数
-                    original_urlopen = urllib.request.urlopen
-                    original_urlretrieve = urllib.request.urlretrieve
-                    original_socket_create = socket.socket
-
-                    def blocked_network(*args, **kwargs):
-                        raise urllib.error.URLError("Network access blocked in packaged mode")
-
-                    def blocked_socket(*args, **kwargs):
-                        raise socket.error("Socket access blocked in packaged mode")
-
-                    # 屏蔽网络访问
-                    urllib.request.urlopen = blocked_network
-                    urllib.request.urlretrieve = blocked_network
-                    socket.socket = blocked_socket
-
-                    try:
-                        # 2. 设置完全离线的环境变量
-                        os.environ['EASYOCR_OFFLINE_MODE'] = 'true'
-                        os.environ['EASYOCR_DOWNLOAD_ENABLED'] = 'false'
-                        os.environ['TORCH_HOME'] = base_params.get('model_storage_directory', '')
-
-                        # 3. CPU模式下禁用各种优化以避免网络调用
-                        if not use_gpu:
-                            import warnings
-                            warnings.filterwarnings("ignore")
-                            os.environ['CUDA_VISIBLE_DEVICES'] = ''
-
-                        # 4. 获取实际的模型路径
-                        base_storage_dir = base_params.get('model_storage_directory')
-
-                        # 检查可能的模型目录
-                        possible_model_dirs = [
-                            Path(base_storage_dir) / "_internal" / "easyocr_models",
-                            Path(base_storage_dir) / "easyocr_models",
-                            Path(base_storage_dir).parent / "easyocr_models"
-                        ]
-
-                        actual_model_dir = None
-                        for model_dir in possible_model_dirs:
-                            if model_dir.exists():
-                                models = list(model_dir.glob("*.pth"))
-                                if models:
-                                    actual_model_dir = model_dir
-                                    log_info(f"找到模型目录: {actual_model_dir} (包含{len(models)}个模型文件)")
-                                    break
-
-                        if not actual_model_dir:
-                            raise Exception("无法找到包含模型文件的目录")
-
-                        # 5. 检查必要的模型文件
-                        craft_models = list(actual_model_dir.glob("craft_*.pth"))
-                        text_models = (list(actual_model_dir.glob("*_sim_*.pth")) + 
-                                     list(actual_model_dir.glob("*_g2.pth")) +
-                                     list(actual_model_dir.glob("chinese*.pth")))
-
-                        log_info(f"检查模型文件: craft模型={len(craft_models)}, 文本模型={len(text_models)}")
-
-                        if not craft_models:
-                            raise Exception("未找到必要的检测模型 (craft_*.pth)")
-                        if not text_models:
-                            raise Exception("未找到必要的识别模型")
-
-                        log_info("✅ 所有必要的离线模型文件都已找到")
-
-                        # 6. 配置完全离线的初始化参数
-                        # 使用模型目录的父目录作为存储目录，这样EasyOCR能找到.EasyOCR子目录
-                        offline_storage_dir = str(actual_model_dir.parent)
-
-                        offline_params = {
-                            'lang_list': ['ch_sim', 'en'],
-                            'gpu': False,  # 强制CPU模式确保稳定
-                            'verbose': False,  # 完全关闭verbose避免触发下载
-                            'model_storage_directory': offline_storage_dir,
-                            'download_enabled': False  # 如果支持的话
-                        }
-
-                        log_info(f"离线模式参数: {offline_params}")
-
-                        # 7. 创建EasyOCR期望的目录结构（如果不存在）
-                        easyocr_home = Path(offline_storage_dir) / ".EasyOCR"
-                        easyocr_model_subdir = easyocr_home / "model"
-                        easyocr_model_subdir.mkdir(parents=True, exist_ok=True)
-
-                        # 确保模型文件在EasyOCR期望的位置
-                        for model_file in actual_model_dir.glob("*.pth"):
-                            target_file = easyocr_model_subdir / model_file.name
-                            if not target_file.exists():
-                                try:
-                                    target_file.hardlink_to(model_file)
-                                except:
-                                    import shutil
-                                    shutil.copy2(model_file, target_file)
-
-                        log_info(f"EasyOCR模型结构准备完成: {easyocr_home}")
-
-                        # 8. 尝试离线初始化
-                        self.easyocr_reader = easyocr.Reader(**offline_params)
-                        log_info("✅ 打包环境EasyOCR初始化成功（完全离线模式）")
-
-                    except Exception as offline_error:
-                        log_error(f"离线模式初始化失败: {offline_error}")
-
-                        # 最后的回退：尝试最简单的初始化（仅使用语言列表）
-                        try:
-                            log_warning("尝试最简单的回退初始化...")
-                            # 只使用最基本的参数
-                            minimal_params = ['ch_sim', 'en']
-                            self.easyocr_reader = easyocr.Reader(minimal_params, gpu=False, verbose=False)
-                            log_info("✅ 打包环境EasyOCR最简回退初始化成功")
-                        except Exception as final_error:
-                            log_error(f"所有离线初始化方式都失败: {final_error}")
-                            log_error("请检查模型文件是否正确安装在_internal/easyocr_models目录中")
-                            self.easyocr_reader = None
-                    finally:
-                        # 恢复网络函数（避免影响其他组件）
-                        urllib.request.urlopen = original_urlopen
-                        urllib.request.urlretrieve = original_urlretrieve
-                        socket.socket = original_socket_create
-
-                else:
-                    # 开发环境正常初始化
-                    self.easyocr_reader = easyocr.Reader(**base_params)
-                    log_info("开发环境EasyOCR初始化成功")
+                # 极简统一初始化：打包和开发环境使用相同逻辑
+                log_info("统一EasyOCR初始化...")
+                
+                # 强制禁用下载，只使用本地模型
+                final_params = base_params.copy()
+                final_params['download_enabled'] = False
+                
+                # 简单直接的初始化
+                self.easyocr_reader = easyocr.Reader(**final_params)
+                log_info("✅ EasyOCR初始化成功")
 
             except Exception as e:
                 log_error(f"EasyOCR主要初始化流程失败: {e}")

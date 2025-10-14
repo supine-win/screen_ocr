@@ -11,59 +11,61 @@ from logger_config import get_logger
 
 logger = get_logger(__name__)
 
+# 导入强制单一路径管理器
+try:
+    from force_single_model_path import ForceSingleModelPath
+    _FORCE_AVAILABLE = True
+except ImportError:
+    _FORCE_AVAILABLE = False
+
 class ModelPathManager:
-    """模型路径管理器"""
+    """模型路径管理器 - 极简版本"""
     
     @staticmethod 
     def get_easyocr_model_path(config=None):
-        """获取EasyOCR模型路径 - 统一简化版本"""
-        # 统一使用 easyocr_models 目录名
-        model_dir_name = 'easyocr_models'
-        
-        # 确定基础目录
-        if getattr(sys, 'frozen', False):
-            # 打包环境：使用exe同目录
-            base_dir = Path(sys.executable).parent
+        """获取EasyOCR模型路径 - 强制单一路径版本"""
+        # 优先使用强制单一路径管理器
+        if _FORCE_AVAILABLE and getattr(sys, 'frozen', False):
+            # 打包环境：使用强制单一路径
+            model_dir = ForceSingleModelPath.get_single_model_path()
         else:
-            # 开发环境：使用当前工作目录
-            base_dir = Path.cwd()
-        
-        model_dir = base_dir / model_dir_name
-        
-        # 只在第一次检查时输出详细信息
-        if not hasattr(ModelPathManager, '_path_checked'):
-            logger.info(f"Model directory: {model_dir}")
-            
-            if model_dir.exists():
-                models = list(model_dir.glob("*.pth"))
-                if models:
-                    logger.info(f"Found {len(models)} model files")
-                    for model in models:
-                        logger.info(f"  - {model.name}: {model.stat().st_size / (1024*1024):.1f} MB")
-                else:
-                    logger.warning(f"Model directory exists but no .pth files found")
+            # 开发环境或无强制管理器：使用标准逻辑
+            model_dir_name = 'easyocr_models'
+            if getattr(sys, 'frozen', False):
+                base_dir = Path(sys.executable).parent
             else:
-                logger.warning(f"Model directory not found: {model_dir}")
-                logger.info("Create directory and download models:")
-                logger.info(f"  mkdir {model_dir}")
-                logger.info("  # Download required .pth files")
-            
-            ModelPathManager._path_checked = True
+                base_dir = Path.cwd()
+            model_dir = str(base_dir / model_dir_name)
         
-        return str(model_dir)
+        # 极简日志：只输出一次关键信息
+        if not hasattr(ModelPathManager, '_path_logged'):
+            logger.info(f"EasyOCR模型目录: {model_dir}")
+            if Path(model_dir).exists():
+                models = list(Path(model_dir).glob("*.pth"))
+                if models:
+                    logger.info(f"找到 {len(models)} 个模型文件")
+                else:
+                    logger.warning("模型目录为空，请添加必要的.pth文件")
+            else:
+                logger.warning(f"模型目录不存在，请创建: {model_dir}")
+            ModelPathManager._path_logged = True
+        
+        return model_dir
     
     @staticmethod
     def setup_easyocr_environment(config=None):
-        """设置EasyOCR环境变量 - 简化版本"""
-        model_path = ModelPathManager.get_easyocr_model_path(config)
-        
-        # 设置EasyOCR模型路径环境变量
-        os.environ['EASYOCR_MODEL_PATH'] = model_path
-        
-        # 只在第一次设置时输出日志
-        if not hasattr(ModelPathManager, '_env_set'):
-            logger.info(f"EasyOCR model path: {model_path}")
-            ModelPathManager._env_set = True
+        """设置EasyOCR环境变量 - 强制单一路径版本"""
+        # 在打包环境中使用强制单一路径管理器
+        if _FORCE_AVAILABLE and getattr(sys, 'frozen', False):
+            # 使用强制单一路径的完整设置
+            model_path = ForceSingleModelPath.setup_complete_force()
+            # 额外的补丁：尝试重定向EasyOCR内部路径
+            ForceSingleModelPath.patch_easyocr_paths()
+        else:
+            # 开发环境或标准设置
+            model_path = ModelPathManager.get_easyocr_model_path(config)
+            os.environ['EASYOCR_MODEL_PATH'] = model_path
+            os.environ['TORCH_HOME'] = model_path
         
         return True
     
@@ -87,97 +89,16 @@ class ModelPathManager:
         # 开发环境
         return "config.json"
     
-    @staticmethod
-    def setup_easyocr_model_structure():
-        """为EasyOCR创建正确的模型目录结构"""
-        model_path = ModelPathManager.get_easyocr_model_path()
-        
-        if not model_path or not getattr(sys, 'frozen', False):
-            return False
-        
-        try:
-            model_dir = Path(model_path)
-            parent_dir = model_dir.parent
-            
-            # 创建EasyOCR期望的目录结构
-            easyocr_home = parent_dir / ".EasyOCR"
-            easyocr_model_dir = easyocr_home / "model"
-            
-            # 确保目录存在
-            easyocr_model_dir.mkdir(parents=True, exist_ok=True)
-            
-            # 复制或链接模型文件到EasyOCR期望的位置
-            for model_file in model_dir.glob("*.pth"):
-                target_file = easyocr_model_dir / model_file.name
-                if not target_file.exists():
-                    try:
-                        # 尝试创建硬链接（更快）
-                        target_file.hardlink_to(model_file)
-                        logger.info(f"创建硬链接: {model_file.name}")
-                    except:
-                        # 回退到复制
-                        import shutil
-                        shutil.copy2(model_file, target_file)
-                        logger.info(f"复制模型文件: {model_file.name}")
-            
-            # 设置HOME环境变量指向我们的目录
-            if os.name == 'nt':
-                os.environ['USERPROFILE'] = str(parent_dir)
-            else:
-                os.environ['HOME'] = str(parent_dir)
-            
-            logger.info(f"EasyOCR模型结构设置完成: {easyocr_home}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"设置EasyOCR模型结构失败: {e}")
-            return False
     
     @staticmethod
     def get_easyocr_reader_params(config=None):
-        """获取EasyOCR Reader初始化参数 - 简化版本"""
+        """获取EasyOCR Reader初始化参数 - 极简版本"""
         model_path = ModelPathManager.get_easyocr_model_path(config)
         
-        # 统一的参数配置
-        params = {
+        # 极简参数：只指定必要的路径和禁用下载
+        return {
             'model_storage_directory': model_path,
-            'download_enabled': True,
+            'download_enabled': False,  # 禁用下载，强制使用本地模型
             'verbose': False
         }
-        
-        # 只在第一次调用时输出参数日志
-        if not hasattr(ModelPathManager, '_params_logged'):
-            logger.info(f"EasyOCR parameters: {params}")
-            ModelPathManager._params_logged = True
-        
-        return params
     
-    @staticmethod
-    def create_debug_info():
-        """创建调试信息文件 - 简化版本"""
-        # 只在开发环境或首次运行时创建调试信息
-        if not getattr(sys, 'frozen', False) or not hasattr(ModelPathManager, '_debug_created'):
-            debug_info = {
-                "environment": "packaged" if getattr(sys, 'frozen', False) else "development",
-                "model_path": ModelPathManager.get_easyocr_model_path(),
-                "config_path": ModelPathManager.get_config_path(),
-            }
-            
-            # 保存调试信息
-            try:
-                import json
-                debug_file = Path("debug_info.json")
-                with open(debug_file, 'w', encoding='utf-8') as f:
-                    json.dump(debug_info, f, indent=2, ensure_ascii=False)
-                
-                # 只在首次创建时输出日志
-                if not hasattr(ModelPathManager, '_debug_created'):
-                    logger.info(f"Debug info saved to: {debug_file}")
-                    ModelPathManager._debug_created = True
-                    
-            except Exception as e:
-                logger.error(f"Failed to save debug info: {e}")
-            
-            return debug_info
-        
-        return {}

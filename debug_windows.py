@@ -130,9 +130,9 @@ def test_model_path():
     try:
         from model_path_manager import ModelPathManager
         
-        # 创建调试信息
-        debug_info = ModelPathManager.create_debug_info()
-        print("✅ 调试信息创建成功")
+        # 检查环境信息
+        env_type = "packaged" if getattr(sys, 'frozen', False) else "development"
+        print(f"✅ 运行环境: {env_type}")
         
         # 获取模型路径
         model_path = ModelPathManager.get_easyocr_model_path()
